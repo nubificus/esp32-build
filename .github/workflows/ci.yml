@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  pull_request:
+    branches: ["main"]
+    types: [synchronize, labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') }}
+    uses: ./.github/workflows/build.yml
+    with:
+      apps: '["nubificus/esp32-ota-update", "nubificus/esp32-hello_world"]'
+      keys: '["ESP32_KEY1","ESP32_KEY2"]'
+      builder_image: 'harbor.nbfc.io/nubificus/esp-idf:x86_64'
+    secrets: inherit
+

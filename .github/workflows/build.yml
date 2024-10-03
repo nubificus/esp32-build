@@ -1,0 +1,248 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      actions-repo:
+        type: string
+        default: 'nubificus/vaccel'
+      actions-rev:
+        type: string
+        default: 'main'
+      runner:
+        type: string
+        default: '["gcc", "dind", "2204"]'
+      runner-archs:
+        type: string
+        default: '["amd64"]'
+      runner-arch-map:
+        type: string
+        default: '[{"amd64":"x86_64", "arm64":"aarch64", "arm":"armv7l"}]'
+      apps:
+        type: string
+        default: '["nubificus/esp32-ota-update"]'
+      targets:
+        type: string
+        default: '["esp32", "esp32s2", "esp32s3"]'
+      builder_image:
+        type: string
+        default: 'harbor.nbfc.io/nubificus/esp-idf:x86_64-latest'
+      upload-subpath:
+        type: string
+        default: ''
+      keys:
+        type: string
+        default: '["ESP32_KEY1", "ESP32_KEY2"]'
+
+    secrets:
+      GIT_CLONE_PAT:
+        required: false
+      AWS_ACCESS_KEY:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+
+jobs:
+  build-unsigned:
+    name: Build ${{ matrix.app }}-${{ matrix.target }}
+    runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
+    strategy:
+      matrix:
+        arch: ["${{ fromJSON(inputs.runner-archs) }}"]
+        app: ["${{ fromJSON(inputs.apps) }}"]
+        target: ["${{ fromJSON(inputs.targets) }}"]
+      fail-fast: true
+    env:
+      ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
+      DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
+      ESP32_KEY1: |
+        ${{ secrets.ESP32_KEY1 }}
+      ESP32_KEY2: |
+        ${{ secrets.ESP32_KEY2 }}
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') }}
+
+    steps:
+      - name: Checkout .github directory
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+          repository: ${{ inputs.actions-repo }}
+          ref: ${{ inputs.actions-rev }}
+
+      - name: Initialize workspace
+        id: initialize-workspace
+        uses: ./.github/actions/initialize-workspace
+        with:
+          fetch-depth: 0
+          remote-actions-repo: ${{ inputs.actions-repo }}
+          token: ${{ secrets.GIT_CLONE_PAT || github.token }}
+
+      - name: Determine project name
+        id: project_name
+        run: |
+          project_name=$(basename "${{ matrix.app }}")
+          echo "Project name: $project_name"
+          echo "PROJECT_NAME=$project_name" >> $GITHUB_ENV
+
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.app }}
+          ref: main
+          path: ${{ env.PROJECT_NAME }}
+          token: ${{ secrets.ORG_PAT || github.token }}
+
+
+      - name: Build non-signed Firmware
+        uses: addnab/docker-run-action@v3
+        id: build_firmware
+        with:
+          image: ${{ inputs.builder_image }}
+          options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
+          run: |
+            cd /esp-idf && . ./export.sh
+            cd /work
+            idf.py set-target ${{ matrix.target }}
+            idf.py -DSDKCONFIG=sdkconfig build
+
+#      - name: Upload to s3
+#        if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-upload') }}
+#        uses: ./.github/actions/upload-to-s3
+#        with:
+#          arch: ${{ env.ARCH }}
+#          local-path: build/ota.bin
+#          remote-subpath: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}
+#          access-key: ${{ secrets.AWS_ACCESS_KEY }}
+#          secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#
+      - name: Parse CMakeLists.txt to determine binary output
+        id: parse_cmakelists
+        run: |
+          if [ -f "CMakeLists.txt" ]; then
+            project_name=$(grep -m1 -oP '(?<=project\().*?(?=\))' CMakeLists.txt | tr -d ' ' || true)
+            binary_name=$(grep -m1 -oP '(?<=add_executable\().*?(?=\s)' CMakeLists.txt | tr -d ' ' || true)
+
+            if [ -z "$binary_name" ]; then
+              if [ -z "$project_name" ]; then
+                echo "No project or binary name found, defaulting to ota.bin"
+                BINARY_PATH="build/ota.bin"
+              else
+                echo "Project name found: $project_name"
+                BINARY_PATH="build/$project_name.bin"
+              fi
+            else
+              echo "Binary name found: $binary_name"
+              BINARY_PATH="build/$binary_name.bin"
+            fi
+          else
+            echo "CMakeLists.txt not found, defaulting to ota.bin"
+            BINARY_PATH="build/ota.bin"
+          fi
+          echo "BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
+        working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
+
+      - name: Upload firmware to s3
+        uses: cloudkernels/minio-upload@v4
+        with:
+          url: https://s3.nubificus.co.uk
+          access-key: ${{ secrets.AWS_ACCESS_KEY }}
+          secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          local-path: ${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}
+          policy: 1
+
+  build-signed:
+    name: Build ${{ matrix.app }}-${{ matrix.target }}
+    runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
+    strategy:
+      matrix:
+        arch: ["${{ fromJSON(inputs.runner-archs) }}"]
+        app: ["${{ fromJSON(inputs.apps) }}"]
+        target: ["esp32"]
+        key: ["${{ fromJSON(inputs.keys) }}"]
+      fail-fast: true
+    env:
+      ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
+      DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
+      ESP32_KEY: ${{ secrets[matrix.key] }}
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') }}
+
+    steps:
+      - name: Checkout .github directory
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+          repository: ${{ inputs.actions-repo }}
+          ref: ${{ inputs.actions-rev }}
+
+      - name: Initialize workspace
+        id: initialize-workspace
+        uses: ./.github/actions/initialize-workspace
+        with:
+          fetch-depth: 0
+          remote-actions-repo: ${{ inputs.actions-repo }}
+          token: ${{ secrets.GIT_CLONE_PAT || github.token }}
+
+      - name: Determine project name
+        id: project_name
+        run: |
+          project_name=$(basename "${{ matrix.app }}")
+          echo "Project name: $project_name"
+          echo "PROJECT_NAME=$project_name" >> $GITHUB_ENV
+
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.app }}
+          ref: main
+          path: ${{ env.PROJECT_NAME }}
+          token: ${{ secrets.ORG_PAT || github.token }}
+
+      - name: Build signed Firmware (single)
+        uses: addnab/docker-run-action@v3
+        id: build_signed_firmware
+        with:
+          image: ${{ inputs.builder_image }}
+          options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
+          run: |
+            cd /esp-idf && . ./export.sh
+            cd /work
+            idf.py set-target ${{ matrix.target }}
+            echo "${{ env.ESP32_KEY }} " > secure_boot_signing_key.pem
+            idf.py -DSDKCONFIG=sdkconfig.secure build
+
+      - name: Parse CMakeLists.txt to determine binary output
+        id: parse_cmakelists
+        run: |
+          if [ -f "CMakeLists.txt" ]; then
+            project_name=$(grep -m1 -oP '(?<=project\().*?(?=\))' CMakeLists.txt | tr -d ' ' || true)
+            binary_name=$(grep -m1 -oP '(?<=add_executable\().*?(?=\s)' CMakeLists.txt | tr -d ' ' || true)
+
+            if [ -z "$binary_name" ]; then
+              if [ -z "$project_name" ]; then
+                echo "No project or binary name found, defaulting to ota.bin"
+                BINARY_PATH="build/ota.bin"
+              else
+                echo "Project name found: $project_name"
+                BINARY_PATH="build/$project_name.bin"
+              fi
+            else
+              echo "Binary name found: $binary_name"
+              BINARY_PATH="build/$binary_name.bin"
+            fi
+          else
+            echo "CMakeLists.txt not found, defaulting to ota.bin"
+            BINARY_PATH="build/ota.bin"
+          fi
+          echo "BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
+        working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
+
+      - name: Upload firmware to s3
+        uses: cloudkernels/minio-upload@v4
+        with:
+          url: https://s3.nubificus.co.uk
+          access-key: ${{ secrets.AWS_ACCESS_KEY }}
+          secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          local-path: ${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }}
+          remote-path: ${{ env.DEFAULT_UPPATH }}-${{ matrix.key }}
+          policy: 1
