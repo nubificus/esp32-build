@@ -94,7 +94,7 @@ jobs:
 
 
       - name: Build non-signed Firmware
-        uses: addnab/docker-run-action@v3
+        uses: nubificus/docker-run-action@v4
         id: build_firmware
         with:
           image: ${{ inputs.builder_image }}
@@ -142,7 +142,7 @@ jobs:
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
       - name: Upload firmware to s3
-        uses: cloudkernels/minio-upload@v4
+        uses: cloudkernels/minio-upload@v4.1
         with:
           url: https://s3.nubificus.co.uk
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
@@ -199,7 +199,7 @@ jobs:
           token: ${{ secrets.ORG_PAT || github.token }}
 
       - name: Build signed Firmware (single)
-        uses: addnab/docker-run-action@v3
+        uses: nubificus/docker-run-action@v4
         id: build_signed_firmware
         with:
           image: ${{ inputs.builder_image }}
@@ -238,7 +238,7 @@ jobs:
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
       - name: Upload firmware to s3
-        uses: cloudkernels/minio-upload@v4
+        uses: cloudkernels/minio-upload@v4.1
         with:
           url: https://s3.nubificus.co.uk
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
