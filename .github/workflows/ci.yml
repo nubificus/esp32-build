@@ -16,8 +16,10 @@ jobs:
     if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') }}
     uses: ./.github/workflows/build.yml
     with:
-      apps: '["nubificus/esp32-ota-update", "nubificus/esp32-hello_world"]'
-      keys: '["ESP32_KEY1","ESP32_KEY2"]'
-      builder_image: 'harbor.nbfc.io/nubificus/esp-idf:x86_64'
+      #apps: '["nubificus/esp32-ota-update", "nubificus/esp32-hello_world"]'
+      apps: '[{"repo": "nubificus/esp32-hello_world", "branch":"main"}]'
+      keys: '[""]'
+      #keys: '["ESP32_KEY1","ESP32_KEY2"]'
+      builder_image: 'harbor.nbfc.io/nubificus/esp-idf:x86_64-slim'
     secrets: inherit
 

@@ -44,7 +44,7 @@ on:
 
 jobs:
   build-unsigned:
-    name: Build ${{ matrix.app }}-${{ matrix.target }}
+    name: Build ${{ matrix.app.repo }}-${{ matrix.target }}
     runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
     strategy:
       matrix:
@@ -80,15 +80,15 @@ jobs:
       - name: Determine project name
         id: project_name
         run: |
-          project_name=$(basename "${{ matrix.app }}")
+          project_name=$(basename "${{ matrix.app.repo }}")
           echo "Project name: $project_name"
           echo "PROJECT_NAME=$project_name" >> $GITHUB_ENV
 
       - name: Checkout app repo
         uses: actions/checkout@v4
         with:
-          repository: ${{ matrix.app }}
-          ref: main
+          repository: ${{ matrix.app.repo }}
+          ref: ${{ matrix.app.branch }}
           path: ${{ env.PROJECT_NAME }}
           token: ${{ secrets.ORG_PAT || github.token }}
 
@@ -100,7 +100,6 @@ jobs:
           image: ${{ inputs.builder_image }}
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
-            cd /esp-idf && . ./export.sh
             cd /work
             idf.py set-target ${{ matrix.target }}
             idf.py -DSDKCONFIG=sdkconfig build
@@ -152,7 +151,7 @@ jobs:
           policy: 1
 
   build-signed:
-    name: Build ${{ matrix.app }}-${{ matrix.target }}
+    name: Build ${{ matrix.app.repo }}-${{ matrix.target }}
     runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
     strategy:
       matrix:
@@ -165,7 +164,7 @@ jobs:
       ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
       DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
       ESP32_KEY: ${{ secrets[matrix.key] }}
-    if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') }}
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') && inputs.keys != '[""]' }}
 
     steps:
       - name: Checkout .github directory
@@ -186,15 +185,15 @@ jobs:
       - name: Determine project name
         id: project_name
         run: |
-          project_name=$(basename "${{ matrix.app }}")
+          project_name=$(basename "${{ matrix.app.repo }}")
           echo "Project name: $project_name"
           echo "PROJECT_NAME=$project_name" >> $GITHUB_ENV
 
       - name: Checkout app repo
         uses: actions/checkout@v4
         with:
-          repository: ${{ matrix.app }}
-          ref: main
+          repository: ${{ matrix.app.repo }}
+          ref: ${{ matrix.app.branch }}
           path: ${{ env.PROJECT_NAME }}
           token: ${{ secrets.ORG_PAT || github.token }}
 
