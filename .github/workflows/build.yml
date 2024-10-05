@@ -33,6 +33,9 @@ on:
       keys:
         type: string
         default: '["ESP32_KEY1", "ESP32_KEY2"]'
+      upload:
+        type: boolean
+        default: false
 
     secrets:
       GIT_CLONE_PAT:
@@ -105,7 +108,6 @@ jobs:
             idf.py -DSDKCONFIG=sdkconfig build
 
 #      - name: Upload to s3
-#        if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-upload') }}
 #        uses: ./.github/actions/upload-to-s3
 #        with:
 #          arch: ${{ env.ARCH }}
@@ -141,6 +143,7 @@ jobs:
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
       - name: Upload firmware to s3
+        if: ${{ inputs.upload }}
         uses: cloudkernels/minio-upload@v4.1
         with:
           url: https://s3.nubificus.co.uk
@@ -237,6 +240,7 @@ jobs:
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
       - name: Upload firmware to s3
+        if: ${{ inputs.upload }}
         uses: cloudkernels/minio-upload@v4.1
         with:
           url: https://s3.nubificus.co.uk

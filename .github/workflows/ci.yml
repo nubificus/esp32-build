@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
     branches: ["main"]
-    types: [synchronize, labeled]
+    types: [synchronize, labeled, unlabeled]
   workflow_dispatch:
 
 concurrency:
@@ -17,9 +17,10 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       #apps: '["nubificus/esp32-ota-update", "nubificus/esp32-hello_world"]'
-      apps: '[{"repo": "nubificus/esp32-hello_world", "branch":"main"}]'
+      apps: '[{"repo": "nubificus/esp-idf-http-camera", "branch":"feat_nbfc"}]'
       keys: '[""]'
       #keys: '["ESP32_KEY1","ESP32_KEY2"]'
       builder_image: 'harbor.nbfc.io/nubificus/esp-idf:x86_64-slim'
+      upload: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-upload') }}
     secrets: inherit
 
