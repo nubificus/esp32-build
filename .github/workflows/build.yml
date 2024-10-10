@@ -58,7 +58,7 @@ jobs:
     env:
       ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
       DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
-    if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') }}
+      #if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') }}
 
     steps:
       - name: Checkout .github directory
@@ -99,6 +99,7 @@ jobs:
           image: ${{ inputs.builder_image }}
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
+            cd /esp-idf && . ./export.sh
             cd /work
             idf.py set-target ${{ matrix.target }}
             idf.py -DSDKCONFIG=sdkconfig build
@@ -139,7 +140,7 @@ jobs:
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
       - name: Upload firmware to s3
-        if: ${{ inputs.upload }}
+        if: ${{ inputs.upload || github.event_name == 'workflow_dispatch' }}
         uses: cloudkernels/minio-upload@v4.1
         with:
           url: https://s3.nubificus.co.uk
@@ -164,7 +165,7 @@ jobs:
       ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
       DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
       ESP32_KEY: ${{ secrets[matrix.key] }}
-    if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') && inputs.keys != '[""]' }}
+    if: ${{ inputs.keys != '[""]' }}
 
     steps:
       - name: Checkout .github directory
@@ -237,7 +238,7 @@ jobs:
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
       - name: Upload firmware to s3
-        if: ${{ inputs.upload }}
+        if: ${{ inputs.upload || github.event_name == 'workflow_dispatch' }}
         uses: cloudkernels/minio-upload@v4.1
         with:
           url: https://s3.nubificus.co.uk
