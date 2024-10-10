@@ -1,36 +1,85 @@
-name: CI
+name: Build trigger
 
 on:
-  pull_request:
-    branches: ["main"]
-    types: [synchronize, labeled, unlabeled]
   workflow_dispatch:
+    inputs:
+      json_input:
+        description: 'JSON input data'
+        required: true
+        type: string
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+
+        #concurrency:
+        #group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+        #cancel-in-progress: true
+
+
+env:
+  DEFAULT_INPUT: '{"apps":[{"repo":"nubificus/esp-idf-http-camera","branch":"feat_nbfc"},{"repo":"nubificus/esp32-hello_world","branch":"main"}],"targets":["esp32","esp32s2"],"keys":["ESP32_KEY1"]}'
 
 jobs:
+  parse_input:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.extract.outputs.apps }}
+      targets: ${{ steps.extract.outputs.targets }}
+      keys: ${{ steps.extract.outputs.keys }}
+      builder_image: ${{ steps.extract.outputs.builder_image }}
+    steps:
+      - name: Parse JSON input
+        id: extract
+        run: |
+          if [ -z "${{ github.event.inputs.json_input }}" ]; then
+            INPUT_JSON='${{ env.DEFAULT_INPUT }}'
+          else
+            INPUT_JSON='${{ github.event.inputs.json_input }}'
+          fi
+
+          # Validate JSON input (optional)
+          # jq -e '. | ...' <(echo "$INPUT_JSON")
+
+          # Parse JSON and extract fields
+          APPS=$(jq -cr '.apps' <<< "$INPUT_JSON")
+          TARGETS=$(jq -cr '.targets' <<< "$INPUT_JSON")
+          KEYS=$(jq -cr '.keys' <<< "$INPUT_JSON")
+          BUILDER_IMAGE=$(jq -cr '.builder_image' <<< "$INPUT_JSON")
+
+          echo "Apps: ${APPS}"
+          # Set outputs
+          echo "apps=${APPS}" >> $GITHUB_OUTPUT
+          echo "targets=${TARGETS}" >> $GITHUB_OUTPUT
+          echo "keys=${KEYS}" >> $GITHUB_OUTPUT
+          echo "builder_image=${BUILDER_IMAGE}" >> $GITHUB_OUTPUT
+          echo "Apps: $APPS"
+          echo "Keys: $KEYS"
+          echo "Builder Image: $BUILDER_IMAGE"
+          echo "INPUT_JSON: $INPUT_JSON"
+
+      - name: Dump
+        id: dump
+        run: |
+           echo ${{ steps.extract.outputs.apps }}
+ 
+
   build:
+    needs: [parse_input]
     name: Build
-    if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ok-to-test') }}
     uses: ./.github/workflows/build.yml
     with:
-      #apps: '["nubificus/esp32-ota-update", "nubificus/esp32-hello_world"]'
-      apps: '[
-          {
-            "repo": "nubificus/esp-idf-http-camera", 
-            "branch":"feat_nbfc"
-          },
-          {
-            "repo": "nubificus/esp32-hello_world", 
-            "branch":"main"
-          }
-      ]'
-      keys: '[""]'
-      #keys: '["ESP32_KEY1","ESP32_KEY2"]'
-      targets: '["esp32s2"]'
-      builder_image: 'harbor.nbfc.io/nubificus/esp-idf:x86_64-slim'
+      apps: ${{ needs.parse_input.outputs.apps }}
+      keys: ${{ needs.parse_input.outputs.keys }}
+      targets: ${{ needs.parse_input.outputs.targets }}
+      builder_image: ${{ needs.parse_input.outputs.builder_image }} #'harbor.nbfc.io/nubificus/esp-idf:x86_64-slim'
       upload: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-upload') }}
+      registry: "harbor.nbfc.io"
     secrets: inherit
+    #harbor_user: ${{ secrets.HARBOR_USER }}
+    #harbor_secret: ${{ secrets.HARBOR_SECRET }}
+    #GIT_CLONE_PAT: ${{ secrets.ORG_PAT }}
+    #AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+    #AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    #WIFI_SSID: ${{ secrets.NBFC_IOT_WIFI_SSID }}
+    #WIFI_PASS: ${{ secrets.NBFC_IOT_WIFI_PASSWD }}
+
 
