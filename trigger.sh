@@ -1,6 +1,6 @@
 # Your input JSON
 #json_input='{ "apps":[ {"repo":"nubificus/esp-idf-http-camera","branch":"feat_nbfc"}, {"repo":"nubificus/esp32-hello_world","branch":"main"}, {"repo":"nubificus/esp32-ota-update","branch":"feat_http_server"} ], "targets":["esp32"], "keys":[""] }'
-json_input='{ "apps":[ {"repo":"nubificus/esp32-ota-update","branch":"feat_http_server"} ], "targets":["esp32"], "keys":[""] }'
+json_input='{"apps":[{"repo":"nubificus/esp32-ota-update","branch":"feat_http_server"}],"targets":["esp32","esp32s2","esp32s3"],"keys":["ESP32_KEY1","ESP32_KEY2"]}'
 
 # Properly escape the JSON using jq and convert to a single line
 escaped_json_input=$(echo "$json_input" | jq -Rc .)
