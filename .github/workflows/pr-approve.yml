@@ -16,19 +16,12 @@ jobs:
   # This workflow contains a single job called "build"
   git-trailers:
     # The type of runner that the job will run on
-    runs-on: [self-hosted, x86_64]
+    runs-on: [base-dind-2204-amd64]
     if: ${{ github.event.review.state == 'approved' }}
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - name: Cleanup previous jobs
-        run: |
-          echo "Cleaning up previous runs"
-          sudo rm -rf ${{ github.workspace }}/*
-          sudo rm -rf ${{ github.workspace }}/.??*
-
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -36,7 +29,7 @@ jobs:
       - name: Do git trailers
         uses: nubificus/git-trailers@main
         with:
-          user_info: ${{ github.workspace }}/.contributors.yaml
+          user_info: ${{ github.workspace }}/.github/contributors.yml
 
 
       - name: Trigger required tests re-run

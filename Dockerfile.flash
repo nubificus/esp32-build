@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+ARG PROJDIR
+
+COPY ${PROJDIR} /firmware/
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libusb-1.0-0 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir esptool
+
+# Runtime arguments provided by the user:
+# eg: --chip esp32s2 --port /dev/ttyUSB0 --flash_size 8MB
+
+# Run example
+# docker run --rm -it --device=/dev/ttyUSB0 <TAG> --chip esp32s2 --port /dev/ttyUSB0 --flash_size 8MB
+
+COPY flash_entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

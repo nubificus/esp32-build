@@ -11,10 +11,10 @@ on:
         default: 'main'
       runner:
         type: string
-        default: '["gcc", "dind", "2204"]'
+        default: '["base", "dind", "2204"]'
       runner-archs:
         type: string
-        default: '["amd64"]'
+        default: '["amd64","arm64"]'
       runner-arch-map:
         type: string
         default: '[{"amd64":"x86_64", "arm64":"aarch64", "arm":"armv7l"}]'
@@ -27,55 +27,52 @@ on:
       builder_image:
         type: string
         default: 'harbor.nbfc.io/nubificus/esp-idf:x86_64-latest'
+      registry:
+        type: string
+        default: 'harbor.nbfc.io'
       upload-subpath:
         type: string
         default: ''
       keys:
         type: string
-        default: '["ESP32_KEY1", "ESP32_KEY2"]'
+        default: '[""]'
       upload:
         type: boolean
         default: false
 
-    secrets:
-      GIT_CLONE_PAT:
-        required: false
-      AWS_ACCESS_KEY:
-        required: false
-      AWS_SECRET_ACCESS_KEY:
-        required: false
-
 jobs:
-  build-unsigned:
-    name: Build ${{ matrix.app.repo }}-${{ matrix.target }}
-    runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
+  build-firmware:
+    name: Build App ${{ matrix.app.type }}-${{ matrix.target }}
+    #runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
+    runs-on: [base-dind-2204-amd64]
     strategy:
       matrix:
-        arch: ["${{ fromJSON(inputs.runner-archs) }}"]
         app: ["${{ fromJSON(inputs.apps) }}"]
         target: ["${{ fromJSON(inputs.targets) }}"]
+        key: ${{ fromJSON(inputs.keys) != '[""]' && fromJSON(inputs.keys) || fromJSON('[""]') }}
       fail-fast: true
     env:
-      ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
-      DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
-    if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') }}
+      #ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
+      #DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
+      DEFAULT_UPPATH: 'nbfc-assets/github/iot'
+      REGISTRY: ${{ inputs.registry }}
+      IMAGE_NAME: ${{ inputs.registry }}/cloud-iot/esp32-${{ matrix.app.type }}
+      ESP32_KEY: ${{ secrets[matrix.key] }}
+    permissions:
+      contents: write # for uploading the SBOM to the release
+      packages: write # for uploading the finished container
+      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
+      id-token: write # to complete the identity challenge with sigstore/fulcio when running outside of PRs
+
+    outputs:
+      partitions-csv-name: ${{ steps.set-outputs.outputs.partitions-csv-name }} 
+      sdkconfig-name: ${{ steps.set-outputs.outputs.sdkconfig-name }}
+      ota-data-initial-name: ${{ steps.set-outputs.outputs.ota-data-initial-name }}
+      partition-table-bin-name: ${{ steps.set-outputs.outputs.partition-table-bin-name }}
+      bootloader-bin-name: ${{ steps.set-outputs.outputs.bootloader-bin-name }}
+      binary-name: ${{ steps.set-outputs.outputs.binary-name }}
 
     steps:
-      - name: Checkout .github directory
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: .github
-          repository: ${{ inputs.actions-repo }}
-          ref: ${{ inputs.actions-rev }}
-
-      - name: Initialize workspace
-        id: initialize-workspace
-        uses: ./.github/actions/initialize-workspace
-        with:
-          fetch-depth: 0
-          remote-actions-repo: ${{ inputs.actions-repo }}
-          token: ${{ secrets.GIT_CLONE_PAT || github.token }}
-
       - name: Determine project name
         id: project_name
         run: |
@@ -90,7 +87,39 @@ jobs:
           ref: ${{ matrix.app.branch }}
           path: ${{ env.PROJECT_NAME }}
           token: ${{ secrets.ORG_PAT || github.token }}
+          submodules: 'recursive'
 
+      - name: Parse CMakeLists.txt to determine binary output
+        id: parse_cmakelists
+        run: |
+          if [ -f "CMakeLists.txt" ]; then
+            project_name=$(grep -m1 -oP '(?<=project\().*?(?=\))' CMakeLists.txt | tr -d ' ' || true)
+            binary_name=$(grep -m1 -oP '(?<=add_executable\().*?(?=\s)' CMakeLists.txt | tr -d ' ' || true)
+
+            if [ -z "$binary_name" ]; then
+              if [ -z "$project_name" ]; then
+                echo "No project or binary name found, defaulting to ota.bin"
+                BINARY_PATH=build/ota.bin
+              else
+                echo "Project name found: $project_name"
+                BINARY_PATH=build/$project_name.bin
+              fi
+            else
+              echo "Binary name found: $binary_name"
+              BINARY_PATH=build/$binary_name.bin
+            fi
+          else
+            echo "CMakeLists.txt not found, defaulting to ota.bin"
+            BINARY_PATH=build/ota.bin
+          fi
+          echo "BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
+          BINARY_NAME=$(basename $BINARY_PATH)
+          echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
+        working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
+
+      - name: Print builder image
+        run: |
+                echo "Builder image: ${{ inputs.builder_image }}"
 
       - name: Build non-signed Firmware
         uses: nubificus/docker-run-action@v4
@@ -100,149 +129,431 @@ jobs:
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
             cd /work
+            export FIRMWARE_VERSION=${{ matrix.app.version }}
+            export DEVICE_TYPE=${{ matrix.target }}
+            export APPLICATION_TYPE=${{ matrix.app.type }}
+            export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
+            export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
+            export OTA_SECURE=1
             idf.py set-target ${{ matrix.target }}
-            idf.py -DSDKCONFIG=sdkconfig build
+            idf.py build
 
-#      - name: Upload to s3
-#        uses: ./.github/actions/upload-to-s3
-#        with:
-#          arch: ${{ env.ARCH }}
-#          local-path: build/ota.bin
-#          remote-subpath: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}
-#          access-key: ${{ secrets.AWS_ACCESS_KEY }}
-#          secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#
-      - name: Parse CMakeLists.txt to determine binary output
-        id: parse_cmakelists
+      - name: Define artifact names
+        id: define-names
         run: |
-          if [ -f "CMakeLists.txt" ]; then
-            project_name=$(grep -m1 -oP '(?<=project\().*?(?=\))' CMakeLists.txt | tr -d ' ' || true)
-            binary_name=$(grep -m1 -oP '(?<=add_executable\().*?(?=\s)' CMakeLists.txt | tr -d ' ' || true)
+                echo "PARTITIONS_CSV_NAME=partitions.csv" >> "$GITHUB_ENV"
+                echo "SDKCONFIG_NAME=sdkconfig" >> "$GITHUB_ENV"
+                echo "OTA_DATA_INITIAL_NAME=ota_data_initial.bin" >> "$GITHUB_ENV"
+                echo "PARTITION_TABLE_BIN_NAME=partition-table.bin" >> "$GITHUB_ENV"
+                echo "BOOTLOADER_BIN_NAME=bootloader.bin" >> "$GITHUB_ENV"
 
-            if [ -z "$binary_name" ]; then
-              if [ -z "$project_name" ]; then
-                echo "No project or binary name found, defaulting to ota.bin"
-                BINARY_PATH="build/ota.bin"
-              else
-                echo "Project name found: $project_name"
-                BINARY_PATH="build/$project_name.bin"
-              fi
-            else
-              echo "Binary name found: $binary_name"
-              BINARY_PATH="build/$binary_name.bin"
-            fi
-          else
-            echo "CMakeLists.txt not found, defaulting to ota.bin"
-            BINARY_PATH="build/ota.bin"
-          fi
-          echo "BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
-        working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
+      - name: Define Paths
+        id: define-paths
+        run: |
+                echo "PARTITIONS_CSV_PATH=${{ env.PROJECT_NAME }}/${{ env.PARTITIONS_CSV_NAME }}" >> "$GITHUB_ENV"
+                echo "SDKCONFIG_PATH=${{ env.PROJECT_NAME }}/${{ env.SDKCONFIG_NAME }}" >> "$GITHUB_ENV"
+                echo "OTA_DATA_INITIAL_PATH=${{ env.PROJECT_NAME }}/build/${{ env.OTA_DATA_INITIAL_NAME }}" >> "$GITHUB_ENV"
+                echo "PARTITION_TABLE_BIN_PATH=${{ env.PROJECT_NAME }}/build/partition_table/${{ env.PARTITION_TABLE_BIN_NAME }}" >> "$GITHUB_ENV"
+                echo "BOOTLOADER_BIN_PATH=${{ env.PROJECT_NAME }}/build/bootloader/${{ env.BOOTLOADER_BIN_NAME }}" >> "$GITHUB_ENV"
+                echo "BINARY_PATH=${{ env.PROJECT_NAME }}/build/${{ env.BINARY_NAME }}" >> "$GITHUB_ENV"
+
+      - name: Gather artifacts
+        id: gather-files
+        run: |
+                mkdir -p ${{ github.workspace }}/artifacts
+                cp ${{ env.BINARY_PATH }} ${{ github.workspace }}/artifacts/${{ env.BINARY_NAME }}-unsigned
+                cp ${{ env.BOOTLOADER_BIN_PATH }} ${{ github.workspace }}/artifacts/${{ env.BOOTLOADER_BIN_NAME }}-unsigned
+                cp ${{ env.PARTITION_TABLE_BIN_PATH }} ${{ github.workspace }}/artifacts/${{ env.PARTITION_TABLE_BIN_NAME }}
+                cp ${{ env.SDKCONFIG_PATH }} ${{ github.workspace }}/artifacts/${{ env.SDKCONFIG_NAME }}
+                cp ${{ env.OTA_DATA_INITIAL_PATH }} ${{ github.workspace }}/artifacts/${{ env.OTA_DATA_INITIAL_NAME }}
+                cp ${{ env.PARTITIONS_CSV_PATH }} ${{ github.workspace }}/artifacts/${{ env.PARTITIONS_CSV_NAME }}
+                ls -la ${{ github.workspace }}/artifacts
+                  
+      - name: Extract signing version
+        id: extract_signing_version
+        if: ${{ inputs.keys != '[""]' }}
+        run: |
+                if [ "${{ matrix.target }}" = "esp32" ]; then
+                        echo "VERSION=1" >> $GITHUB_ENV
+                elif [ "${{ matrix.target }}" = "esp32s2" ] || [ "${{ matrix.target }}" = "esp32s3" ] || [ "${{ matrix.target }}" = "esp32c6" ]; then       
+                        echo "VERSION=2" >> $GITHUB_ENV
+                else
+                        echo "Error: Unsupported device type"
+                        exit 1
+                fi
+
+      - name: Extract key
+        id: extract_key
+        if: ${{ inputs.keys != '[""]' }}
+        run: |
+            echo -n "${{ secrets[matrix.key] }}" > key.pem
+            openssl ec -in key.pem -text -noout || echo "blah"
+
+      - name: Sign artifacts
+        id: sign_artifacts
+        if: ${{ inputs.keys != '[""]' }}
+        uses: nubificus/docker-run-action@v4
+        with:
+          image: ${{ inputs.builder_image }}
+          options: -v ${{ github.workspace }}:/work
+          run: |
+            cd /work
+            espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output /work/artifacts/${{ env.BINARY_NAME }} /work/artifacts/${{ env.BINARY_NAME }}-unsigned
+            espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output /work/artifacts/${{ env.BOOTLOADER_BIN_NAME }} /work/artifacts/${{ env.BOOTLOADER_BIN_NAME }}-unsigned
 
       - name: Upload firmware to s3
-        if: ${{ inputs.upload }}
+        if: ${{ inputs.upload || github.event_name == 'workflow_dispatch' }}
         uses: cloudkernels/minio-upload@v4.1
         with:
           url: https://s3.nubificus.co.uk
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          local-path: ${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }}
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}
+          local-path: artifacts
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.target }}
           policy: 1
 
-  build-signed:
-    name: Build ${{ matrix.app.repo }}-${{ matrix.target }}
-    runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
+      - name: Set output
+        id: set-outputs
+        run: |
+          # Workaround for https://github.com/actions/runner/issues/2499
+          echo "partitions-csv-name=${{ env.PARTITIONS_CSV_NAME }}" >> "$GITHUB_OUTPUT"
+          echo "sdkconfig-name=${{ env.SDKCONFIG_NAME }}" >> "$GITHUB_OUTPUT"
+          echo "ota-data-initial-name=${{ env.OTA_DATA_INITIAL_NAME }}" >> "$GITHUB_OUTPUT"
+          echo "partition-table-bin-name=${{ env.PARTITION_TABLE_BIN_NAME }}" >> "$GITHUB_OUTPUT"
+          echo "bootloader-bin-name=${{ env.BOOTLOADER_BIN_NAME }}" >> "$GITHUB_OUTPUT"
+          echo "binary-name=${{ env.BINARY_NAME }}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+
+  build-firmware-containers:
+    needs: [build-firmware]
+    name: Build Firmware ${{ matrix.app.type }}-${{ matrix.target }}
+    runs-on: [base-dind-2204-amd64]
+    #runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
     strategy:
       matrix:
-        arch: ["${{ fromJSON(inputs.runner-archs) }}"]
+        #arch: ["${{ fromJSON(inputs.runner-archs) }}"]
         app: ["${{ fromJSON(inputs.apps) }}"]
-        # FIXME: update when we enabled secureboot for s2 and s3
-        target: ["esp32"]
-        key: ["${{ fromJSON(inputs.keys) }}"]
+        target: ["${{ fromJSON(inputs.targets) }}"]
+        key: ${{ fromJSON(inputs.keys) != '[""]' && fromJSON(inputs.keys) || fromJSON('[""]') }}
       fail-fast: true
     env:
-      ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
-      DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
+      #ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
+      #DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
+      DEFAULT_UPPATH: 'nbfc-assets/github/iot'
+      REGISTRY: ${{ inputs.registry }}
+      IMAGE_NAME: ${{ inputs.registry }}/cloud-iot/${{ matrix.app.repo }}
       ESP32_KEY: ${{ secrets[matrix.key] }}
-    if: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-test') && inputs.keys != '[""]' }}
+    permissions:
+      contents: write # for uploading the SBOM to the release
+      packages: write # for uploading the finished container
+      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
+      id-token: write # to complete the identity challenge with sigstore/fulcio when running outside of PRs
 
     steps:
-      - name: Checkout .github directory
+      - name: Checkout repo
         uses: actions/checkout@v4
-        with:
-          sparse-checkout: .github
-          repository: ${{ inputs.actions-repo }}
-          ref: ${{ inputs.actions-rev }}
 
-      - name: Initialize workspace
-        id: initialize-workspace
-        uses: ./.github/actions/initialize-workspace
-        with:
-          fetch-depth: 0
-          remote-actions-repo: ${{ inputs.actions-repo }}
-          token: ${{ secrets.GIT_CLONE_PAT || github.token }}
-
-      - name: Determine project name
+      - name: Determine project and binary names
         id: project_name
         run: |
           project_name=$(basename "${{ matrix.app.repo }}")
           echo "Project name: $project_name"
           echo "PROJECT_NAME=$project_name" >> $GITHUB_ENV
+          echo "PARTITIONS_CSV_NAME=${{ needs.build-firmware.outputs.partitions-csv-name }}" >> "$GITHUB_ENV"
+          echo "SDKCONFIG_NAME=${{ needs.build-firmware.outputs.sdkconfig-name }}" >> "$GITHUB_ENV"
+          echo "OTA_DATA_INITIAL_NAME=${{ needs.build-firmware.outputs.ota-data-initial-name }}" >> "$GITHUB_ENV"
+          echo "PARTITION_TABLE_BIN_NAME=${{ needs.build-firmware.outputs.partition-table-bin-name }}" >> "$GITHUB_ENV"
+          echo "BOOTLOADER_BIN_NAME=${{ needs.build-firmware.outputs.bootloader-bin-name }}" >> "$GITHUB_ENV"
+          echo "BINARY_NAME=${{ needs.build-firmware.outputs.binary-name }}" >> "$GITHUB_ENV"
+ 
 
-      - name: Checkout app repo
-        uses: actions/checkout@v4
+      - name: Set short SHA
+        run: echo "SHA_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@28218f9b04b4f3f62068d7b6ce6ca5b26e35336c
         with:
-          repository: ${{ matrix.app.repo }}
-          ref: ${{ matrix.app.branch }}
-          path: ${{ env.PROJECT_NAME }}
-          token: ${{ secrets.ORG_PAT || github.token }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_SECRET }}
 
-      - name: Build signed Firmware (single)
-        uses: nubificus/docker-run-action@v4
-        id: build_signed_firmware
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
         with:
-          image: ${{ inputs.builder_image }}
-          options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
-          run: |
-            cd /esp-idf && . ./export.sh
-            cd /work
-            idf.py set-target ${{ matrix.target }}
-            echo "${{ env.ESP32_KEY }} " > secure_boot_signing_key.pem
-            idf.py -DSDKCONFIG=sdkconfig.secure build
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=${{ matrix.target }}-${{ matrix.app.branch }}-${{ matrix.key }}-
 
-      - name: Parse CMakeLists.txt to determine binary output
-        id: parse_cmakelists
-        run: |
-          if [ -f "CMakeLists.txt" ]; then
-            project_name=$(grep -m1 -oP '(?<=project\().*?(?=\))' CMakeLists.txt | tr -d ' ' || true)
-            binary_name=$(grep -m1 -oP '(?<=add_executable\().*?(?=\s)' CMakeLists.txt | tr -d ' ' || true)
-
-            if [ -z "$binary_name" ]; then
-              if [ -z "$project_name" ]; then
-                echo "No project or binary name found, defaulting to ota.bin"
-                BINARY_PATH="build/ota.bin"
-              else
-                echo "Project name found: $project_name"
-                BINARY_PATH="build/$project_name.bin"
-              fi
-            else
-              echo "Binary name found: $binary_name"
-              BINARY_PATH="build/$binary_name.bin"
-            fi
-          else
-            echo "CMakeLists.txt not found, defaulting to ota.bin"
-            BINARY_PATH="build/ota.bin"
-          fi
-          echo "BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
-        working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
-
-      - name: Upload firmware to s3
-        if: ${{ inputs.upload }}
-        uses: cloudkernels/minio-upload@v4.1
+      - name: Download firmware from s3
+        if: ${{ inputs.upload || github.event_name == 'workflow_dispatch' }}
+        uses: cloudkernels/minio-download@v4.1
         with:
-          url: https://s3.nubificus.co.uk
+          url: https://s3.nbfc.io
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          local-path: ${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }}
-          remote-path: ${{ env.DEFAULT_UPPATH }}-${{ matrix.key }}
+          local-path: /github/workspace/
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.target }}
           policy: 1
+
+      - name: Build and push ${{ matrix.app.type }}-${{ matrix.target }} (Firmware)
+        id: build-and-push-firmware
+        uses: docker/build-push-action@master
+        with:
+          context: .
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: custom/${{ matrix.target }}
+          push: true
+          file: ./Dockerfile.firmware
+          build-args: |
+             BINARY=${{ matrix.target }}/artifacts/${{ env.BINARY_NAME }}
+             FIRMWARE=${{ env.BINARY_NAME }}
+          provenance: false
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@main
+
+      - name: Sign the published Docker image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          DIGEST: ${{steps.build-and-push-firmware.outputs.digest}}
+        run: |
+          cosign sign --yes ${{ env.IMAGE_NAME }}@$DIGEST \
+          -a "repo=${{matrix.app.repo}}" \
+          -a "workflow=${{github.workflow}}" \
+          -a "ref=${{github.sha}}" \
+          -a "author=Nubificus LTD"
+
+  build-flash-containers:
+    needs: [build-firmware]
+    name: Build Flash ${{ matrix.app.type }}-${{ matrix.arch }}
+    runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
+    strategy:
+      matrix:
+        arch: ["${{ fromJSON(inputs.runner-archs) }}"]
+        app: ["${{ fromJSON(inputs.apps) }}"]
+        #target: ["${{ fromJSON(inputs.targets) }}"]
+        #key: ${{ fromJSON(inputs.keys) != '[""]' && fromJSON(inputs.keys) || fromJSON('[""]') }}
+      fail-fast: true
+    env:
+      ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
+      DEFAULT_UPPATH: 'nbfc-assets/github/iot'
+      REGISTRY: ${{ inputs.registry }}
+      IMAGE_NAME: ${{ inputs.registry }}/cloud-iot/${{ matrix.app.repo }}-flash
+    permissions:
+      contents: write # for uploading the SBOM to the release
+      packages: write # for uploading the finished container
+      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
+      id-token: write # to complete the identity challenge with sigstore/fulcio when running outside of PRs
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Determine project and binary names
+        id: project_name
+        run: |
+          project_name=$(basename "${{ matrix.app.repo }}")
+          echo "Project name: $project_name"
+          echo "PROJECT_NAME=$project_name" >> $GITHUB_ENV
+          echo "PARTITIONS_CSV_NAME=${{ needs.build-firmware.outputs.partitions-csv-name }}" >> "$GITHUB_ENV"
+          echo "SDKCONFIG_NAME=${{ needs.build-firmware.outputs.sdkconfig-name }}" >> "$GITHUB_ENV"
+          echo "OTA_DATA_INITIAL_NAME=${{ needs.build-firmware.outputs.ota-data-initial-name }}" >> "$GITHUB_ENV"
+          echo "PARTITION_TABLE_BIN_NAME=${{ needs.build-firmware.outputs.partition-table-bin-name }}" >> "$GITHUB_ENV"
+          echo "BOOTLOADER_BIN_NAME=${{ needs.build-firmware.outputs.bootloader-bin-name }}" >> "$GITHUB_ENV"
+          echo "BINARY_NAME=${{ needs.build-firmware.outputs.binary-name }}" >> "$GITHUB_ENV"
+
+      - name: Set short SHA
+        run: echo "SHA_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@28218f9b04b4f3f62068d7b6ce6ca5b26e35336c
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_SECRET }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=${{ matrix.arch }}-${{ matrix.app.branch }}-
+
+      - name: Download firmware from s3
+        if: ${{ inputs.upload || github.event_name == 'workflow_dispatch' }}
+        uses: cloudkernels/minio-download@v4.1
+        with:
+          url: https://s3.nbfc.io
+          access-key: ${{ secrets.AWS_ACCESS_KEY }}
+          secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          local-path: /github/workspace/
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}
+          policy: 1
+
+      - name: Build and push ${{ matrix.app.type }}-${{ matrix.arch }}
+        id: build-and-push-flash
+        uses: docker/build-push-action@master
+        with:
+          context: .
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          file: ./Dockerfile.flash
+          build-args: |
+             PROJDIR=${{ env.PROJECT_NAME }}
+          provenance: false
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@main
+
+      - name: Sign the published Docker image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          DIGEST: ${{steps.build-and-push-flash.outputs.digest}}
+        run: |
+          cosign sign --yes ${{ env.IMAGE_NAME }}@$DIGEST \
+          -a "repo=${{matrix.app.repo}}" \
+          -a "workflow=${{github.workflow}}" \
+          -a "ref=${{github.sha}}" \
+          -a "author=Nubificus LTD"
+
+  manifest-flash:
+    needs: [build-flash-containers]
+    runs-on: base-dind-2204-amd64 # use the GitHub-hosted runner to build the image
+    permissions:
+      contents: write # for uploading the SBOM to the release
+      packages: write # for uploading the finished container
+      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
+      id-token: write # to complete the identity challenge with sigstore/fulcio when running outside of PRs
+    strategy:
+      matrix:
+        app: ["${{ fromJSON(inputs.apps) }}"] 
+        key: ${{ fromJSON(inputs.keys) != '[""]' && fromJSON(inputs.keys) || fromJSON('[""]') }}
+    env:
+      REGISTRY: ${{ inputs.registry }}
+      TAG: ${{ matrix.app.version }}
+      VER: ${{ matrix.app.version }}
+      IMAGE_NAME: ${{ inputs.registry }}/cloud-iot/${{ matrix.app.repo }}-flash
+      ESP32_KEY: ${{ secrets[matrix.key] }}
+
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v4
+
+      - name: Set short SHA
+        run: echo "SHA_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Log into registry ${{ inputs.REGISTRY }}
+        uses: docker/login-action@28218f9b04b4f3f62068d7b6ce6ca5b26e35336c
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_SECRET }}
+
+      - name: Process runner architectures and create docker manifest
+        id: create-manifest
+        run: |
+          runner_archs='${{ inputs.runner-archs }}'
+          amend_command=""
+
+          for arch in $(echo $runner_archs | jq -r '.[]'); do
+            amend_command+=" --amend ${{ env.IMAGE_NAME }}:$arch-${{ matrix.app.branch }}-${{ env.SHA_SHORT }}"
+          done
+
+          echo "-------------------- Amend command constructed -------------------"
+          echo "$amend_command"
+
+          docker manifest create ${{ env.IMAGE_NAME }}:${{ matrix.app.branch }} $amend_command
+
+          VAR=`docker manifest push ${{ env.IMAGE_NAME }}:${{ matrix.app.branch }} | tail -1`
+          echo "manifest_sha=$VAR" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@main
+
+      - name: Sign the published Docker image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          DIGEST: ${{steps.create-manifest.outputs.manifest_sha }}
+        run: |
+          cosign sign --yes ${{ env.IMAGE_NAME }}@$DIGEST \
+          -a "repo=${{github.repository}}" \
+          -a "workflow=${{github.workflow}}" \
+          -a "ref=${{github.sha}}" \
+          -a "author=Nubificus LTD"
+
+  manifest-firmware:
+    needs: [build-firmware-containers]
+    runs-on: base-dind-2204-amd64 # use the GitHub-hosted runner to build the image
+    permissions:
+      contents: write # for uploading the SBOM to the release
+      packages: write # for uploading the finished container
+      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
+      id-token: write # to complete the identity challenge with sigstore/fulcio when running outside of PRs
+    strategy:
+      matrix:
+        app: ["${{ fromJSON(inputs.apps) }}"] 
+        key: ${{ fromJSON(inputs.keys) != '[""]' && fromJSON(inputs.keys) || fromJSON('[""]') }}
+    env:
+      REGISTRY: ${{ inputs.registry }}
+      TAG: ${{ matrix.app.version }}
+      VER: ${{ matrix.app.version }}
+      IMAGE_NAME: ${{ inputs.registry }}/cloud-iot/${{ matrix.app.repo }}
+      ESP32_KEY: ${{ secrets[matrix.key] }}
+
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v4
+
+      - name: Set short SHA
+        run: echo "SHA_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Log into registry ${{ inputs.REGISTRY }}
+        uses: docker/login-action@28218f9b04b4f3f62068d7b6ce6ca5b26e35336c
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_SECRET }}
+
+      - name: Process runner architectures and create docker manifest
+        id: create-manifest
+        run: |
+          runner_archs='${{ inputs.targets }}'
+          amend_command=""
+
+          for target in $(echo $runner_archs | jq -r '.[]'); do
+            amend_command+=" --amend ${{ env.IMAGE_NAME }}:$target-${{ matrix.app.branch }}-${{ matrix.key }}-${{ env.SHA_SHORT }}"
+          done
+
+          echo "-------------------- Amend command constructed -------------------"
+          echo "$amend_command"
+
+          docker manifest create ${{ env.IMAGE_NAME }}:${{ matrix.app.branch }}-${{ matrix.key }} $amend_command
+
+          VAR=`docker manifest push ${{ env.IMAGE_NAME }}:${{ matrix.app.branch }}-${{ matrix.key }} | tail -1`
+          echo "manifest_sha=$VAR" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@main
+
+      - name: Sign the published Docker image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          DIGEST: ${{steps.create-manifest.outputs.manifest_sha }}
+        run: |
+          cosign sign --yes ${{ env.IMAGE_NAME }}@$DIGEST \
+          -a "repo=${{github.repository}}" \
+          -a "workflow=${{github.workflow}}" \
+          -a "ref=${{github.sha}}" \
+          -a "author=Nubificus LTD"
