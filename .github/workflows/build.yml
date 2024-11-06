@@ -50,6 +50,10 @@ on:
         required: false
       harbor_secret:
         required: false
+      WIFI_SSID:
+        required: false
+      WIFI_PASS:
+        required: false
 
 jobs:
   build-unsigned:
@@ -117,8 +121,10 @@ jobs:
             export FIRMWARE_VERSION=${{ matrix.app.version }}
             export DEVICE_TYPE=${{ matrix.target }}
             export APPLICATION_TYPE=${{ matrix.app.type }}
+            export WIFI_SSID=${{ secrets.WIFI_SSID }}
+            export WIFI_PASS=${{ secrets.WIFI_PASS }}
             idf.py set-target ${{ matrix.target }}
-            idf.py -DSDKCONFIG=sdkconfig build
+            idf.py build
 
       - name: Parse CMakeLists.txt to determine binary output
         id: parse_cmakelists
@@ -144,6 +150,8 @@ jobs:
             BINARY_PATH="build/ota.bin"
           fi
           echo "BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
+          BINARY_NAME=$(basename $BINARY_PATH)
+          echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
       - name: Upload firmware to s3
@@ -193,7 +201,7 @@ jobs:
           file: ./Dockerfile.firmware
           build-args: |
              BINARY=${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }}
-             FIRMWARE=$(basename ${{ env.BINARY_PATH }})
+             FIRMWARE=${{ env.BINARY_NAME }}
           #build-contexts: |
           # ${{ steps.base-image-calculator.outputs.base_image }}
           provenance: false

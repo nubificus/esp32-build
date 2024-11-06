@@ -80,4 +80,7 @@ jobs:
       GIT_CLONE_PAT: ${{ secrets.ORG_PAT }}
       AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      WIFI_SSID: ${{ secrets.NBFC_IOT_WIFI_SSID }}
+      WIFI_PASS: ${{ secrets.NBFC_IOT_WIFI_PASSWD }}
+
 
