@@ -192,8 +192,8 @@ jobs:
           #file: ${{ inputs.dockerfile }}
           file: ./Dockerfile.firmware
           build-args: |
-             BINARY=${{ env.PROJECT_NAME }}/${{ env.BINARY_NAME }}
-             FIRMWARE=$(basename ${{ env.BINARY_NAME }})
+             BINARY=${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }}
+             FIRMWARE=$(basename ${{ env.BINARY_PATH }})
           #build-contexts: |
           # ${{ steps.base-image-calculator.outputs.base_image }}
           provenance: false
