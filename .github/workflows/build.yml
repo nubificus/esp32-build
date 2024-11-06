@@ -35,25 +35,10 @@ on:
         default: ''
       keys:
         type: string
-        default: '["ESP32_KEY1", "ESP32_KEY2"]'
+        default: '[""]'
       upload:
         type: boolean
         default: false
-    secrets:
-      GIT_CLONE_PAT:
-        required: false
-      AWS_ACCESS_KEY:
-        required: false
-      AWS_SECRET_ACCESS_KEY:
-        required: false
-      harbor_user:
-        required: false
-      harbor_secret:
-        required: false
-      WIFI_SSID:
-        required: false
-      WIFI_PASS:
-        required: false
 
 jobs:
   build-unsigned:
@@ -64,12 +49,14 @@ jobs:
         arch: ["${{ fromJSON(inputs.runner-archs) }}"]
         app: ["${{ fromJSON(inputs.apps) }}"]
         target: ["${{ fromJSON(inputs.targets) }}"]
+        key: ${{ fromJSON(inputs.keys) != '[""]' && fromJSON(inputs.keys) || fromJSON('[""]') }}
       fail-fast: true
     env:
       ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
       DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
       REGISTRY: ${{ inputs.registry }}
       IMAGE_NAME: ${{ inputs.registry }}/nubificus/esp32-${{ matrix.app.type }}
+      ESP32_KEY: ${{ secrets[matrix.key] }}
     permissions:
       contents: write # for uploading the SBOM to the release
       packages: write # for uploading the finished container
@@ -91,7 +78,7 @@ jobs:
         with:
           fetch-depth: 0
           remote-actions-repo: ${{ inputs.actions-repo }}
-          token: ${{ secrets.GIT_CLONE_PAT || github.token }}
+          token: ${{ secrets.ORG_PAT || github.token }}
 
       - name: Determine project name
         id: project_name
@@ -106,25 +93,7 @@ jobs:
           repository: ${{ matrix.app.repo }}
           ref: ${{ matrix.app.branch }}
           path: ${{ env.PROJECT_NAME }}
-          token: ${{ secrets.GIT_CLONE_PAT || github.token }}
-
-
-      - name: Build non-signed Firmware
-        uses: nubificus/docker-run-action@v4
-        id: build_firmware
-        with:
-          image: ${{ inputs.builder_image }}
-          options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
-          run: |
-            cd /esp-idf && . ./export.sh
-            cd /work
-            export FIRMWARE_VERSION=${{ matrix.app.version }}
-            export DEVICE_TYPE=${{ matrix.target }}
-            export APPLICATION_TYPE=${{ matrix.app.type }}
-            export WIFI_SSID=${{ secrets.WIFI_SSID }}
-            export WIFI_PASS=${{ secrets.WIFI_PASS }}
-            idf.py set-target ${{ matrix.target }}
-            idf.py build
+          token: ${{ secrets.ORG_PAT || github.token }}
 
       - name: Parse CMakeLists.txt to determine binary output
         id: parse_cmakelists
@@ -154,6 +123,55 @@ jobs:
           echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
+
+      - name: Build non-signed Firmware
+        uses: nubificus/docker-run-action@v4
+        id: build_firmware
+        if: ${{ inputs.keys == '[""]' }}
+        with:
+          image: ${{ inputs.builder_image }}
+          options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
+          run: |
+            cd /esp-idf && . ./export.sh
+            cd /work
+            export FIRMWARE_VERSION=${{ matrix.app.version }}
+            export DEVICE_TYPE=${{ matrix.target }}
+            export APPLICATION_TYPE=${{ matrix.app.type }}
+            export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
+            export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASSWD }}
+            idf.py set-target ${{ matrix.target }}
+            idf.py build
+
+
+      - name: Extract key
+        id: extract_key
+        if: ${{ inputs.keys != '[""]' }}
+        run: |
+            echo -n "${{ secrets[matrix.key] }}" > key.pem
+            openssl ec -in key.pem -text -noout || echo "blah"
+        working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
+
+      - name: Build signed Firmware
+        uses: nubificus/docker-run-action@v4
+        id: build_signed_firmware
+        if: ${{ inputs.keys != '[""]' }}
+        with:
+          image: ${{ inputs.builder_image }}
+          options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
+          run: |
+            cd /esp-idf && . ./export.sh
+            cd /work
+            export FIRMWARE_VERSION=${{ matrix.app.version }}
+            export DEVICE_TYPE=${{ matrix.target }}
+            export APPLICATION_TYPE=${{ matrix.app.type }}
+            export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
+            export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
+            idf.py set-target ${{ matrix.target }}
+            idf.py build
+            espsecure.py sign_data --version 1 --keyfile key.pem --output ${{ env.BINARY_PATH }}-signed ${{ env.BINARY_PATH }}
+            mv ${{ env.BINARY_PATH }}-signed ${{ env.BINARY_PATH }}
+            rm key.pem
+
       - name: Upload firmware to s3
         if: ${{ inputs.upload || github.event_name == 'workflow_dispatch' }}
         uses: cloudkernels/minio-upload@v4.1
@@ -175,8 +193,8 @@ jobs:
         uses: docker/login-action@28218f9b04b4f3f62068d7b6ce6ca5b26e35336c
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.harbor_user }}
-          password: ${{ secrets.harbor_secret }}
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_SECRET }}
 
       - name: Extract Docker metadata
         id: meta
@@ -184,7 +202,7 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=${{ matrix.target }}-${{ matrix.app.version }}-
+            type=sha,prefix=${{ matrix.key }}${{ matrix.target }}-${{ matrix.app.version }}-
  
       - name: Build and push ${{ matrix.app.type }}-${{ matrix.target }}
         id: build-and-push
@@ -209,7 +227,7 @@ jobs:
       - name: Get image digest
         run: |
           echo "IMAGE_DIGEST=$(docker inspect \
-          ${{ env.IMAGE_NAME }}:${{ matrix.target }}-${{ matrix.app.version }}-${{ env.SHA_SHORT }} | \
+          ${{ env.IMAGE_NAME }}:${{ matrix.key }}${{ matrix.target }}-${{ matrix.app.version }}-${{ env.SHA_SHORT }} | \
           jq -r '.[0].Id')" >> $GITHUB_ENV
 
       - name: Install cosign
@@ -237,11 +255,13 @@ jobs:
     strategy:
       matrix:
         app: ["${{ fromJSON(inputs.apps) }}"] 
+        key: ${{ fromJSON(inputs.keys) != '[""]' && fromJSON(inputs.keys) || fromJSON('[""]') }}
     env:
       REGISTRY: ${{ inputs.registry }}
       TAG: ${{ matrix.app.version }}
       VER: ${{ matrix.app.version }}
       IMAGE_NAME: ${{ inputs.registry }}/nubificus/esp32-${{ matrix.app.type }}
+      ESP32_KEY: ${{ secrets[matrix.key] }}
 
     steps:
       - name: Checkout the repo
@@ -254,8 +274,8 @@ jobs:
         uses: docker/login-action@28218f9b04b4f3f62068d7b6ce6ca5b26e35336c
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.harbor_user }}
-          password: ${{ secrets.harbor_secret }}
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_SECRET }}
 
       - name: Process runner architectures and create docker manifest
         id: create-manifest
@@ -265,15 +285,15 @@ jobs:
 
           for arch in $(echo $runner_archs | jq -r '.[]'); do
             #amend_command+=" --amend ${{ env.REGISTRY }}/${{ matrix.app.repo }}:$arch-${{ env.SHA_SHORT }}"
-            amend_command+=" --amend ${{ env.IMAGE_NAME }}:$arch-${{ env.VER }}-${{ env.SHA_SHORT }}"
+            amend_command+=" --amend ${{ env.IMAGE_NAME }}:${{ matrix.key }}$arch-${{ env.VER }}-${{ env.SHA_SHORT }}"
           done
 
           echo "-------------------- Amend command constructed -------------------"
           echo "$amend_command"
 
-          docker manifest create ${{ env.IMAGE_NAME }}:${{ env.TAG }} $amend_command
+          docker manifest create ${{ env.IMAGE_NAME }}:${{ env.TAG }}${{ matrix.key }} $amend_command
 
-          VAR=`docker manifest push ${{ env.IMAGE_NAME }}:${{ env.TAG }} | tail -1`
+          VAR=`docker manifest push ${{ env.IMAGE_NAME }}:${{ env.TAG }}${{ matrix.key }} | tail -1`
           echo "manifest_sha=$VAR" >> "$GITHUB_OUTPUT"
 
       - name: Install cosign
@@ -295,102 +315,3 @@ jobs:
           #working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
           #run: |
           #docker buildx build --platform custom/esp32 -t harbor.nbfc.io/nubificus/${{ env.PROJECT_NAME }}:${{ matrix.target }} --build-arg BINARY=${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }} . --push --provenance false
-
-
-  build-signed:
-    name: Build ${{ matrix.app.repo }}-${{ matrix.target }}
-    runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
-    strategy:
-      matrix:
-        arch: ["${{ fromJSON(inputs.runner-archs) }}"]
-        app: ["${{ fromJSON(inputs.apps) }}"]
-        # FIXME: update when we enabled secureboot for s2 and s3
-        target: ["esp32"]
-        key: ["${{ fromJSON(inputs.keys) }}"]
-      fail-fast: true
-    env:
-      ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
-      DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
-      ESP32_KEY: ${{ secrets[matrix.key] }}
-    if: ${{ inputs.keys != '[""]' }}
-
-    steps:
-      - name: Checkout .github directory
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: .github
-          repository: ${{ inputs.actions-repo }}
-          ref: ${{ inputs.actions-rev }}
-
-      - name: Initialize workspace
-        id: initialize-workspace
-        uses: ./.github/actions/initialize-workspace
-        with:
-          fetch-depth: 0
-          remote-actions-repo: ${{ inputs.actions-repo }}
-          token: ${{ secrets.GIT_CLONE_PAT || github.token }}
-
-      - name: Determine project name
-        id: project_name
-        run: |
-          project_name=$(basename "${{ matrix.app.repo }}")
-          echo "Project name: $project_name"
-          echo "PROJECT_NAME=$project_name" >> $GITHUB_ENV
-
-      - name: Checkout app repo
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ matrix.app.repo }}
-          ref: ${{ matrix.app.branch }}
-          path: ${{ env.PROJECT_NAME }}
-          token: ${{ secrets.GIT_CLONE_PAT || github.token }}
-
-      - name: Build signed Firmware (single)
-        uses: nubificus/docker-run-action@v4
-        id: build_signed_firmware
-        with:
-          image: ${{ inputs.builder_image }}
-          options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
-          run: |
-            cd /esp-idf && . ./export.sh
-            cd /work
-            idf.py set-target ${{ matrix.target }}
-            echo "${{ env.ESP32_KEY }} " > secure_boot_signing_key.pem
-            idf.py -DSDKCONFIG=sdkconfig.secure build
-
-      - name: Parse CMakeLists.txt to determine binary output
-        id: parse_cmakelists
-        run: |
-          if [ -f "CMakeLists.txt" ]; then
-            project_name=$(grep -m1 -oP '(?<=project\().*?(?=\))' CMakeLists.txt | tr -d ' ' || true)
-            binary_name=$(grep -m1 -oP '(?<=add_executable\().*?(?=\s)' CMakeLists.txt | tr -d ' ' || true)
-
-            if [ -z "$binary_name" ]; then
-              if [ -z "$project_name" ]; then
-                echo "No project or binary name found, defaulting to ota.bin"
-                BINARY_PATH="build/ota.bin"
-              else
-                echo "Project name found: $project_name"
-                BINARY_PATH="build/$project_name.bin"
-              fi
-            else
-              echo "Binary name found: $binary_name"
-              BINARY_PATH="build/$binary_name.bin"
-            fi
-          else
-            echo "CMakeLists.txt not found, defaulting to ota.bin"
-            BINARY_PATH="build/ota.bin"
-          fi
-          echo "BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
-        working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
-
-      - name: Upload firmware to s3
-        if: ${{ inputs.upload || github.event_name == 'workflow_dispatch' }}
-        uses: cloudkernels/minio-upload@v4.1
-        with:
-          url: https://s3.nubificus.co.uk
-          access-key: ${{ secrets.AWS_ACCESS_KEY }}
-          secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          local-path: ${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }}
-          remote-path: ${{ env.DEFAULT_UPPATH }}-${{ matrix.key }}
-          policy: 1

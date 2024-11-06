@@ -74,13 +74,13 @@ jobs:
       builder_image: 'harbor.nbfc.io/nubificus/esp-idf:x86_64'
       upload: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-upload') }}
       registry: "harbor.nbfc.io"
-    secrets:
-      harbor_user: ${{ secrets.HARBOR_USER }}
-      harbor_secret: ${{ secrets.HARBOR_SECRET }}
-      GIT_CLONE_PAT: ${{ secrets.ORG_PAT }}
-      AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      WIFI_SSID: ${{ secrets.NBFC_IOT_WIFI_SSID }}
-      WIFI_PASS: ${{ secrets.NBFC_IOT_WIFI_PASSWD }}
+    secrets: inherit
+    #harbor_user: ${{ secrets.HARBOR_USER }}
+    #harbor_secret: ${{ secrets.HARBOR_SECRET }}
+    #GIT_CLONE_PAT: ${{ secrets.ORG_PAT }}
+    #AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+    #AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    #WIFI_SSID: ${{ secrets.NBFC_IOT_WIFI_SSID }}
+    #WIFI_PASS: ${{ secrets.NBFC_IOT_WIFI_PASSWD }}
 
 
