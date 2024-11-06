@@ -27,6 +27,9 @@ on:
       builder_image:
         type: string
         default: 'harbor.nbfc.io/nubificus/esp-idf:x86_64-latest'
+      registry:
+        type: string
+        default: 'harbor.nbfc.io'
       upload-subpath:
         type: string
         default: ''
@@ -36,7 +39,6 @@ on:
       upload:
         type: boolean
         default: false
-
     secrets:
       GIT_CLONE_PAT:
         required: false
@@ -44,10 +46,14 @@ on:
         required: false
       AWS_SECRET_ACCESS_KEY:
         required: false
+      harbor_user:
+        required: false
+      harbor_secret:
+        required: false
 
 jobs:
   build-unsigned:
-    name: Build ${{ matrix.app.repo }}-${{ matrix.target }}
+    name: Build ${{ matrix.app.type }}-${{ matrix.target }}
     runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
     strategy:
       matrix:
@@ -59,7 +65,13 @@ jobs:
       ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
       DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
       REGISTRY: ${{ inputs.registry }}
-      IMAGE_NAME: ${{ inputs.registry }}/${{ github.repository }}
+      IMAGE_NAME: ${{ inputs.registry }}/nubificus/esp32-${{ matrix.app.type }}
+    permissions:
+      contents: write # for uploading the SBOM to the release
+      packages: write # for uploading the finished container
+      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
+      id-token: write # to complete the identity challenge with sigstore/fulcio when running outside of PRs
+
 
     steps:
       - name: Checkout .github directory
@@ -90,7 +102,7 @@ jobs:
           repository: ${{ matrix.app.repo }}
           ref: ${{ matrix.app.branch }}
           path: ${{ env.PROJECT_NAME }}
-          token: ${{ secrets.ORG_PAT || github.token }}
+          token: ${{ secrets.GIT_CLONE_PAT || github.token }}
 
 
       - name: Build non-signed Firmware
@@ -102,6 +114,9 @@ jobs:
           run: |
             cd /esp-idf && . ./export.sh
             cd /work
+            export FIRMWARE_VERSION=${{ matrix.app.version }}
+            export DEVICE_TYPE=${{ matrix.target }}
+            export APPLICATION_TYPE=${{ matrix.app.type }}
             idf.py set-target ${{ matrix.target }}
             idf.py -DSDKCONFIG=sdkconfig build
 
@@ -161,9 +176,9 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=${{ matrix.target }}-
+            type=sha,prefix=${{ matrix.target }}-${{ matrix.app.version }}-
  
-      - name: Build and push ${{ matrix.app.repo }}-${{ matrix.target }}
+      - name: Build and push ${{ matrix.app.type }}-${{ matrix.target }}
         id: build-and-push
         uses: docker/build-push-action@master
         with:
@@ -186,7 +201,7 @@ jobs:
       - name: Get image digest
         run: |
           echo "IMAGE_DIGEST=$(docker inspect \
-          ${{ env.REGISTRY }}/${{ matrix.app.repo }}:${{ matrix.target }}-${{ env.SHA_SHORT }} | \
+          ${{ env.IMAGE_NAME }}:${{ matrix.target }}-${{ matrix.app.version }}-${{ env.SHA_SHORT }} | \
           jq -r '.[0].Id')" >> $GITHUB_ENV
 
       - name: Install cosign
@@ -216,7 +231,9 @@ jobs:
         app: ["${{ fromJSON(inputs.apps) }}"] 
     env:
       REGISTRY: ${{ inputs.registry }}
-      TAG: generic
+      TAG: ${{ matrix.app.version }}
+      VER: ${{ matrix.app.version }}
+      IMAGE_NAME: ${{ inputs.registry }}/nubificus/esp32-${{ matrix.app.type }}
 
     steps:
       - name: Checkout the repo
@@ -239,15 +256,16 @@ jobs:
           amend_command=""
 
           for arch in $(echo $runner_archs | jq -r '.[]'); do
-            amend_command+=" --amend ${{ env.REGISTRY }}/${{ matrix.app.repo }}:$arch-${{ env.SHA_SHORT }}"
+            #amend_command+=" --amend ${{ env.REGISTRY }}/${{ matrix.app.repo }}:$arch-${{ env.SHA_SHORT }}"
+            amend_command+=" --amend ${{ env.IMAGE_NAME }}:$arch-${{ env.VER }}-${{ env.SHA_SHORT }}"
           done
 
           echo "-------------------- Amend command constructed -------------------"
           echo "$amend_command"
 
-          docker manifest create ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.dockerfile }}:${{ env.TAG }} $amend_command
+          docker manifest create ${{ env.IMAGE_NAME }}:${{ env.TAG }} $amend_command
 
-          VAR=`docker manifest push ${{ env.REGISTRY }}/${{ matrix.app.repo }}:${{ env.TAG }} | tail -1`
+          VAR=`docker manifest push ${{ env.IMAGE_NAME }}:${{ env.TAG }} | tail -1`
           echo "manifest_sha=$VAR" >> "$GITHUB_OUTPUT"
 
       - name: Install cosign
@@ -258,17 +276,17 @@ jobs:
           COSIGN_EXPERIMENTAL: "true"
           DIGEST: ${{steps.create-manifest.outputs.manifest_sha }}
         run: |
-          cosign sign --yes ${{ env.REGISTRY }}/${{ matrix.app.repo }}@$DIGEST \
+          cosign sign --yes ${{ env.IMAGE_NAME }}@$DIGEST \
           -a "repo=${{github.repository}}" \
           -a "workflow=${{github.workflow}}" \
           -a "ref=${{github.sha}}" \
           -a "author=Nubificus LTD"
 
-      - name: Build container image
-        id: parse_cmakelists
-        working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
-        run: |
-          docker buildx build --platform custom/esp32 -t harbor.nbfc.io/nubificus/${{ env.PROJECT_NAME }}:${{ matrix.target }} --build-arg BINARY=${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }} . --push --provenance false
+          #- name: Build container image
+          #id: parse_cmakelists
+          #working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
+          #run: |
+          #docker buildx build --platform custom/esp32 -t harbor.nbfc.io/nubificus/${{ env.PROJECT_NAME }}:${{ matrix.target }} --build-arg BINARY=${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }} . --push --provenance false
 
 
   build-signed:
@@ -317,7 +335,7 @@ jobs:
           repository: ${{ matrix.app.repo }}
           ref: ${{ matrix.app.branch }}
           path: ${{ env.PROJECT_NAME }}
-          token: ${{ secrets.ORG_PAT || github.token }}
+          token: ${{ secrets.GIT_CLONE_PAT || github.token }}
 
       - name: Build signed Firmware (single)
         uses: nubificus/docker-run-action@v4

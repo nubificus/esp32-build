@@ -12,9 +12,10 @@ on:
         type: string
 
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+        #concurrency:
+        #group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+        #cancel-in-progress: true
+
 
 env:
   DEFAULT_INPUT: '{"apps":[{"repo":"nubificus/esp-idf-http-camera","branch":"feat_nbfc"},{"repo":"nubificus/esp32-hello_world","branch":"main"}],"targets":["esp32","esp32s2"],"keys":["ESP32_KEY1"]}'
@@ -72,5 +73,11 @@ jobs:
       targets: ${{ needs.parse_input.outputs.targets }}
       builder_image: 'harbor.nbfc.io/nubificus/esp-idf:x86_64'
       upload: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-upload') }}
-    secrets: inherit
+      registry: "harbor.nbfc.io"
+    secrets:
+      harbor_user: ${{ secrets.HARBOR_USER }}
+      harbor_secret: ${{ secrets.HARBOR_SECRET }}
+      GIT_CLONE_PAT: ${{ secrets.ORG_PAT }}
+      AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
