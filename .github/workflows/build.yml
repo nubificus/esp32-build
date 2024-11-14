@@ -94,6 +94,7 @@ jobs:
           ref: ${{ matrix.app.branch }}
           path: ${{ env.PROJECT_NAME }}
           token: ${{ secrets.ORG_PAT || github.token }}
+          submodules: 'recursive'
 
       - name: Parse CMakeLists.txt to determine binary output
         id: parse_cmakelists
