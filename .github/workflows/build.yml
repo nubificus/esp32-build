@@ -141,6 +141,7 @@ jobs:
             export APPLICATION_TYPE=${{ matrix.app.type }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASSWD }}
+            git config --global --add safe.directory /work
             bash -x ${{ matrix.app.script }}
             idf.py set-target ${{ matrix.target }}
             idf.py build
