@@ -71,6 +71,7 @@ jobs:
           sparse-checkout: .github
           repository: ${{ inputs.actions-repo }}
           ref: ${{ inputs.actions-rev }}
+          submodules: recursive
 
       - name: Initialize workspace
         id: initialize-workspace
