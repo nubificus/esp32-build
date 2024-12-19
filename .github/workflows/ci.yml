@@ -71,7 +71,7 @@ jobs:
       keys: ${{ needs.parse_input.outputs.keys }}
       #keys: '["ESP32_KEY1","ESP32_KEY2"]'
       targets: ${{ needs.parse_input.outputs.targets }}
-      builder_image: 'harbor.nbfc.io/nubificus/esp-idf:x86_64'
+      builder_image: 'harbor.nbfc.io/nubificus/esp-idf:x86_64-slim'
       upload: ${{ contains(github.event.pull_request.labels.*.name, 'ok-to-upload') }}
       registry: "harbor.nbfc.io"
     secrets: inherit
