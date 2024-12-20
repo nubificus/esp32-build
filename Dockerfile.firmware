@@ -1,0 +1,6 @@
+FROM scratch
+
+ARG BINARY
+ARG FIRMWARE
+
+COPY ${BINARY} /firmware/${FIRMWARE}
