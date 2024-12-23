@@ -168,6 +168,7 @@ jobs:
             export APPLICATION_TYPE=${{ matrix.app.type }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
+            export OTA_SECURE=1
             idf.py set-target ${{ matrix.target }}
             idf.py build
             espsecure.py sign_data --version 1 --keyfile key.pem --output ${{ env.BINARY_PATH }}-signed ${{ env.BINARY_PATH }}
