@@ -145,6 +145,19 @@ jobs:
             idf.py build
 
 
+      - name: Extract signing version
+        id: extract_signing_version
+        if: ${{ inputs.keys != '[""]' }}
+        run: |
+                if [ "${{ matrix.target }}" = "esp32" ]; then
+                        echo "VERSION=1" >> $GITHUB_ENV
+                elif [ "${{ matrix.target }}" = "esp32s2" ] || [ "${{ matrix.target }}" = "esp32s3" ]; then
+                        echo "VERSION=2" >> $GITHUB_ENV
+                else
+                        echo "Error: Unsupported device type"
+                        exit 1
+                fi
+
       - name: Extract key
         id: extract_key
         if: ${{ inputs.keys != '[""]' }}
@@ -171,7 +184,7 @@ jobs:
             export OTA_SECURE=1
             idf.py set-target ${{ matrix.target }}
             idf.py build
-            espsecure.py sign_data --version 1 --keyfile key.pem --output ${{ env.BINARY_PATH }}-signed ${{ env.BINARY_PATH }}
+            espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output ${{ env.BINARY_PATH }}-signed ${{ env.BINARY_PATH }}
             mv ${{ env.BINARY_PATH }}-signed ${{ env.BINARY_PATH }}
             rm key.pem
 
