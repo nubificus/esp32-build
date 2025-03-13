@@ -107,18 +107,18 @@ jobs:
             if [ -z "$binary_name" ]; then
               if [ -z "$project_name" ]; then
                 echo "No project or binary name found, defaulting to ota.bin"
-                BINARY_PATH="build/ota.bin"
+                BINARY_PATH=build/ota.bin
               else
                 echo "Project name found: $project_name"
-                BINARY_PATH="build/$project_name.bin"
+                BINARY_PATH=build/$project_name.bin
               fi
             else
               echo "Binary name found: $binary_name"
-              BINARY_PATH="build/$binary_name.bin"
+              BINARY_PATH=build/$binary_name.bin
             fi
           else
             echo "CMakeLists.txt not found, defaulting to ota.bin"
-            BINARY_PATH="build/ota.bin"
+            BINARY_PATH=build/ota.bin
           fi
           echo "BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
           BINARY_NAME=$(basename $BINARY_PATH)
