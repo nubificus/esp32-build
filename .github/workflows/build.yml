@@ -151,7 +151,7 @@ jobs:
         run: |
                 if [ "${{ matrix.target }}" = "esp32" ]; then
                         echo "VERSION=1" >> $GITHUB_ENV
-                elif [ "${{ matrix.target }}" = "esp32s2" ] || [ "${{ matrix.target }}" = "esp32s3" ]; then
+                elif [ "${{ matrix.target }}" = "esp32s2" ] || [ "${{ matrix.target }}" = "esp32s3" ] || [ "${{ matrix.target }}" = "esp32c6" ]; then
                         echo "VERSION=2" >> $GITHUB_ENV
                 else
                         echo "Error: Unsupported device type"
