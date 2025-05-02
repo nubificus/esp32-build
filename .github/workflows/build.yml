@@ -127,8 +127,11 @@ jobs:
 
       - name: Extract app environment variables
         run: |
-          for key in $(echo '${{ matrix.app }}' | jq -r 'keys[]'); do
-            value=$(echo '${{ matrix.app }}' | jq -r --arg k "$key" '.[$k]')
+          echo '${{ matrix.app }}'
+          echo "${{ matrix.app }}"
+          echo "${{ matrix.app }}" | jq -r 'keys[]'
+          for key in $(echo "${{ matrix.app }}" | jq -r 'keys[]'); do
+            value=$(echo "${{ matrix.app }}" | jq -r --arg k "$key" '.[$k]')
             echo "$key=$value" >> $GITHUB_ENV
           done
           cat $GITHUB_ENV
