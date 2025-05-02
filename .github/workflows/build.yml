@@ -131,7 +131,14 @@ jobs:
             value=$(echo '${{ matrix.app }}' | jq -r --arg k "$key" '.[$k]')
             echo "$key=$value" >> $GITHUB_ENV
           done
+          cat $GITHUB_ENV
         shell: bash
+
+      - name: Debug GITHUB_ENV
+        run: |
+            cat $GITHUB_ENV
+            echo "Doing env"
+            env
 
       - name: Build non-signed Firmware
         uses: nubificus/docker-run-action@v4
