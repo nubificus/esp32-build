@@ -139,6 +139,7 @@ jobs:
             export FIRMWARE_VERSION=${{ matrix.app.version }}
             export DEVICE_TYPE=${{ matrix.target }}
             export APPLICATION_TYPE=${{ matrix.app.type }}
+            export MODEL_FILE=${{ matrix.app.model }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASSWD }}
             idf.py set-target ${{ matrix.target }}
@@ -179,6 +180,7 @@ jobs:
             export FIRMWARE_VERSION=${{ matrix.app.version }}
             export DEVICE_TYPE=${{ matrix.target }}
             export APPLICATION_TYPE=${{ matrix.app.type }}
+            export MODEL_FILE=${{ matrix.app.model }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
             export OTA_SECURE=1

@@ -18,7 +18,7 @@ on:
 
 
 env:
-  DEFAULT_INPUT: '{"apps":[{"repo":"nubificus/esp-idf-http-camera","branch":"feat_nbfc"},{"repo":"nubificus/esp32-hello_world","branch":"main"}],"targets":["esp32","esp32s2"],"keys":["ESP32_KEY1"]}'
+  DEFAULT_INPUT: '{"apps":[{"repo":"nubificus/esp-idf-http-camera","branch":"main","model":"models/default_model.tflite"},{"repo":"nubificus/esp32-hello_world","branch":"main","model":"models/default_model.tflite"}],"targets":["esp32","esp32s2"],"keys":["ESP32_KEY1"]}'
 
 jobs:
   parse_input:
