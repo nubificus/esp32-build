@@ -125,6 +125,13 @@ jobs:
           echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
+      - name: Extract app environment variables
+        run: |
+          for key in $(echo '${{ matrix.app }}' | jq -r 'keys[]'); do
+            value=$(echo '${{ matrix.app }}' | jq -r --arg k "$key" '.[$k]')
+            echo "$key=$value" >> $GITHUB_ENV
+          done
+        shell: bash
 
       - name: Build non-signed Firmware
         uses: nubificus/docker-run-action@v4
@@ -136,10 +143,10 @@ jobs:
           run: |
             cd /esp-idf && . ./export.sh
             cd /work
-            export FIRMWARE_VERSION=${{ matrix.app.version }}
+            # export FIRMWARE_VERSION=${{ matrix.app.version }}
             export DEVICE_TYPE=${{ matrix.target }}
-            export APPLICATION_TYPE=${{ matrix.app.type }}
-            export MODEL_FILE=${{ matrix.app.model }}
+            # export APPLICATION_TYPE=${{ matrix.app.type }}
+            # export MODEL_FILE=${{ matrix.app.model }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASSWD }}
             idf.py set-target ${{ matrix.target }}
@@ -177,10 +184,10 @@ jobs:
           run: |
             cd /esp-idf && . ./export.sh
             cd /work
-            export FIRMWARE_VERSION=${{ matrix.app.version }}
+            # export FIRMWARE_VERSION=${{ matrix.app.version }}
             export DEVICE_TYPE=${{ matrix.target }}
-            export APPLICATION_TYPE=${{ matrix.app.type }}
-            export MODEL_FILE=${{ matrix.app.model }}
+            # export APPLICATION_TYPE=${{ matrix.app.type }}
+            # export MODEL_FILE=${{ matrix.app.model }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
             export OTA_SECURE=1
