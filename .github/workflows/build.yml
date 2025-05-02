@@ -125,12 +125,19 @@ jobs:
           echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
+      - name: Check matrix app 1
+        run: echo "${{ fromJSON(inputs.apps) }}"
+
+      - name: Check matrix app 2
+        run: echo "${{ matrix.app }}"
+
+      - name: Check matrix app 3
+        run: echo '${{ matrix.app }}'
+
       - name: Extract app environment variables
         run: |
-          echo "${{ matrix.app }}"
-          echo "${{ matrix.app }}" | jq -r 'keys[]'
-          for key in $(echo "${{ matrix.app }}" | jq -r 'keys[]'); do
-            value=$(echo "${{ matrix.app }}" | jq -r --arg k "$key" '.[$k]')
+          for key in $(echo '${{ matrix.app }}' | jq -r 'keys[]'); do
+            value=$(echo '${{ matrix.app }}' | jq -r --arg k "$key" '.[$k]')
             echo "$key=$value" >> $GITHUB_ENV
           done
           cat $GITHUB_ENV
