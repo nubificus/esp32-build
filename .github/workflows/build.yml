@@ -127,7 +127,6 @@ jobs:
 
       - name: Extract app environment variables
         run: |
-          echo '${{ matrix.app }}'
           echo "${{ matrix.app }}"
           echo "${{ matrix.app }}" | jq -r 'keys[]'
           for key in $(echo "${{ matrix.app }}" | jq -r 'keys[]'); do
