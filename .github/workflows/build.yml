@@ -125,20 +125,24 @@ jobs:
           echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
-      - name: Extract app environment variables
-        run: |
-          for key in $(echo '${{ matrix.app }}' | jq -r '.[0] | keys[]'); do
-            value=$(echo '${{ matrix.app }}' | jq -r --arg k "$key" '.[0][$k]')
-            echo "$key=$value" >> $GITHUB_ENV
-          done
-          cat $GITHUB_ENV
-        shell: bash
+      # - name: Extract app environment variables
+      #   run: |
+      #     for key in $(echo '${{ matrix.app }}' | jq -r '.[0] | keys[]'); do
+      #       value=$(echo '${{ matrix.app }}' | jq -r --arg k "$key" '.[0][$k]')
+      #       echo "$key=$value" >> $GITHUB_ENV
+      #     done
+      #     cat $GITHUB_ENV
+      #   shell: bash
 
-      - name: Debug GITHUB_ENV
+      - name: Set matrix.app fields as env vars
         run: |
-            cat $GITHUB_ENV
-            echo "Doing env"
-            env
+          echo "Matrix app object: $APP_JSON"
+          echo "$APP_JSON" | jq -r 'to_entries[] | "echo \(.key)=\(.value) >> $GITHUB_ENV"' | bash
+        env:
+          APP_JSON: ${{ toJson(matrix.app) }}
+        
+      - name: Show env vars
+        run: env | grep -E 'repo|branch|version|type|model'
 
       - name: Build non-signed Firmware
         uses: nubificus/docker-run-action@v4
