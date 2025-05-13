@@ -21,6 +21,9 @@ on:
       apps:
         type: string
         default: '["nubificus/esp32-ota-update"]'
+      flash_sizes:
+        type: string
+        default: '["4MB", "8MB", "16MB"]'
       targets:
         type: string
         default: '["esp32", "esp32s2", "esp32s3"]'
@@ -48,6 +51,7 @@ jobs:
       matrix:
         arch: ["${{ fromJSON(inputs.runner-archs) }}"]
         app: ["${{ fromJSON(inputs.apps) }}"]
+        flash_size: ["${{ fromJSON(inputs.flash_sizes) }}"]
         target: ["${{ fromJSON(inputs.targets) }}"]
         key: ${{ fromJSON(inputs.keys) != '[""]' && fromJSON(inputs.keys) || fromJSON('[""]') }}
       fail-fast: true
@@ -142,7 +146,7 @@ jobs:
           APP_JSON: ${{ toJson(matrix.app) }}
         
       - name: Show env vars
-        run: env | grep -E 'repo|branch|version|type|model'
+        run: env | grep -E 'repo|branch|version|type|model|tensor_allocation_space'
 
       - name: Build non-signed Firmware
         uses: nubificus/docker-run-action@v4
@@ -155,6 +159,7 @@ jobs:
             cd /esp-idf && . ./export.sh
             cd /work
             export DEVICE_TYPE=${{ matrix.target }}
+            export FLASH_SIZE=${{ matrix.flash_size }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASSWD }}
             idf.py set-target ${{ matrix.target }}
@@ -192,10 +197,8 @@ jobs:
           run: |
             cd /esp-idf && . ./export.sh
             cd /work
-            # export FIRMWARE_VERSION=${{ matrix.app.version }}
             export DEVICE_TYPE=${{ matrix.target }}
-            # export APPLICATION_TYPE=${{ matrix.app.type }}
-            # export MODEL_FILE=${{ matrix.app.model }}
+            export FLASH_SIZE=${{ matrix.flash_size }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
             export OTA_SECURE=1

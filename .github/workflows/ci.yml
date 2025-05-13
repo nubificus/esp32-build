@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       apps: ${{ steps.extract.outputs.apps }}
+      flash_sizes: ${{ steps.extract.outputs.flash_sizes }}
       targets: ${{ steps.extract.outputs.targets }}
       keys: ${{ steps.extract.outputs.keys }}
     steps:
@@ -42,12 +43,14 @@ jobs:
 
           # Parse JSON and extract fields
           APPS=$(jq -cr '.apps' <<< "$INPUT_JSON")
+          FLASH_SIZES=$(jq -cr '.flash_sizes' <<< "$INPUT_JSON")
           TARGETS=$(jq -cr '.targets' <<< "$INPUT_JSON")
           KEYS=$(jq -cr '.keys' <<< "$INPUT_JSON")
 
           echo "Apps: ${APPS}"
           # Set outputs
           echo "apps=${APPS}" >> $GITHUB_OUTPUT
+          echo "flash_sizes=${FLASH_SIZES}" >> $GITHUB_OUTPUT
           echo "targets=${TARGETS}" >> $GITHUB_OUTPUT
           echo "keys=${KEYS}" >> $GITHUB_OUTPUT
           echo "Apps: $APPS"
@@ -68,6 +71,7 @@ jobs:
     with:
       #apps: '["nubificus/esp32-ota-update", "nubificus/esp32-hello_world"]'
       apps: ${{ needs.parse_input.outputs.apps }}
+      flash_sizes: ${{ needs.parse_input.outputs.flash_sizes }}
       keys: ${{ needs.parse_input.outputs.keys }}
       #keys: '["ESP32_KEY1","ESP32_KEY2"]'
       targets: ${{ needs.parse_input.outputs.targets }}
