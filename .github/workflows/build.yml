@@ -209,7 +209,7 @@ jobs:
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           local-path: artifacts
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.target }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}/${{ matrix.target }}
           policy: 1
 
       - name: Set output
@@ -287,7 +287,7 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=${{ matrix.target }}-${{ matrix.app.branch }}-${{ matrix.key }}-
+            type=sha,prefix=${{ matrix.target }}-${{ matrix.app.type }}-${{ matrix.app.version }}-${{ matrix.key }}-
 
       - name: Download firmware from s3
         if: ${{ inputs.upload || github.event_name == 'workflow_dispatch' }}
@@ -297,7 +297,7 @@ jobs:
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           local-path: /github/workspace/
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.target }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}/${{ matrix.target }}
           policy: 1
 
       - name: Build and push ${{ matrix.app.type }}-${{ matrix.target }} (Firmware)
@@ -387,7 +387,7 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=${{ matrix.arch }}-${{ matrix.app.branch }}-
+            type=sha,prefix=${{ matrix.arch }}-${{ matrix.app.type }}-${{ matrix.app.version }}-
 
       - name: Download firmware from s3
         if: ${{ inputs.upload || github.event_name == 'workflow_dispatch' }}
@@ -396,8 +396,8 @@ jobs:
           url: https://s3.nbfc.io
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          local-path: /github/workspace/
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}
+          local-path: /github/workspace/${{ env.PROJECT_NAME }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}
           policy: 1
 
       - name: Build and push ${{ matrix.app.type }}-${{ matrix.arch }}
@@ -411,7 +411,7 @@ jobs:
           push: true
           file: ./Dockerfile.flash
           build-args: |
-             PROJDIR=${{ env.PROJECT_NAME }}
+             PROJDIR=${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}
           provenance: false
 
       - name: Install cosign
@@ -468,15 +468,15 @@ jobs:
           amend_command=""
 
           for arch in $(echo $runner_archs | jq -r '.[]'); do
-            amend_command+=" --amend ${{ env.IMAGE_NAME }}:$arch-${{ matrix.app.branch }}-${{ env.SHA_SHORT }}"
+            amend_command+=" --amend ${{ env.IMAGE_NAME }}:$arch-${{ matrix.app.type }}-${{ matrix.app.version }}-${{ env.SHA_SHORT }}"
           done
 
           echo "-------------------- Amend command constructed -------------------"
           echo "$amend_command"
 
-          docker manifest create ${{ env.IMAGE_NAME }}:${{ matrix.app.branch }} $amend_command
+          docker manifest create ${{ env.IMAGE_NAME }}:${{ matrix.app.type }}-${{ matrix.app.version }} $amend_command
 
-          VAR=`docker manifest push ${{ env.IMAGE_NAME }}:${{ matrix.app.branch }} | tail -1`
+          VAR=`docker manifest push ${{ env.IMAGE_NAME }}:${{ matrix.app.type }}-${{ matrix.app.version }} | tail -1`
           echo "manifest_sha=$VAR" >> "$GITHUB_OUTPUT"
 
       - name: Install cosign
@@ -533,15 +533,15 @@ jobs:
           amend_command=""
 
           for target in $(echo $runner_archs | jq -r '.[]'); do
-            amend_command+=" --amend ${{ env.IMAGE_NAME }}:$target-${{ matrix.app.branch }}-${{ matrix.key }}-${{ env.SHA_SHORT }}"
+            amend_command+=" --amend ${{ env.IMAGE_NAME }}:$target-${{ matrix.app.type }}-${{ matrix.app.version }}-${{ matrix.key }}-${{ env.SHA_SHORT }}"
           done
 
           echo "-------------------- Amend command constructed -------------------"
           echo "$amend_command"
 
-          docker manifest create ${{ env.IMAGE_NAME }}:${{ matrix.app.branch }}-${{ matrix.key }} $amend_command
+          docker manifest create ${{ env.IMAGE_NAME }}:${{ matrix.app.type }}-${{ matrix.app.version }}-${{ matrix.key }} $amend_command
 
-          VAR=`docker manifest push ${{ env.IMAGE_NAME }}:${{ matrix.app.branch }}-${{ matrix.key }} | tail -1`
+          VAR=`docker manifest push ${{ env.IMAGE_NAME }}:${{ matrix.app.type }}-${{ matrix.app.version }}-${{ matrix.key }} | tail -1`
           echo "manifest_sha=$VAR" >> "$GITHUB_OUTPUT"
 
       - name: Install cosign
