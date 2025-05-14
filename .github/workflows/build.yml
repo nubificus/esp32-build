@@ -200,9 +200,10 @@ jobs:
             export OTA_SECURE=1
             idf.py set-target ${{ matrix.target }}
             idf.py build
-            espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output ${{ env.BINARY_PATH }}-signed ${{ env.BINARY_PATH }}
-            espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output ${{ env.BOOTLOADER_BIN_PATH }}-signed ${{ env.BOOTLOADER_BIN_PATH }}
-            mv ${{ env.BINARY_PATH }}-signed ${{ env.BINARY_PATH }}
+            mv ${{ env.BINARY_PATH }} ${{ env.BINARY_PATH }}-unsigned
+            mv ${{ env.PROJECT_NAME }}/build/bootloader/bootloader.bin ${{ env.PROJECT_NAME }}/build/bootloader/bootloader.bin-unsigned
+            espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output ${{ env.BINARY_PATH }} ${{ env.BINARY_PATH }}-unsigned
+            espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output ${{ env.PROJECT_NAME }}/build/bootloader/bootloader.bin ${{ env.PROJECT_NAME }}/build/bootloader/bootloader.bin-unsigned
             rm key.pem
 
       - name: Define artifact names
