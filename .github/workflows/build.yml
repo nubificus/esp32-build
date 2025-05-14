@@ -199,14 +199,11 @@ jobs:
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
             export OTA_SECURE=1
             idf.py set-target ${{ matrix.target }}
-            idf.py bootloader
             idf.py build
-            ls -la build
-            ls -la build/bootloader
             mv ${{ env.BINARY_PATH }} ${{ env.BINARY_PATH }}-unsigned
-            mv ${{ env.PROJECT_NAME }}/build/bootloader/bootloader.bin ${{ env.PROJECT_NAME }}/build/bootloader/bootloader.bin-unsigned
+            mv build/bootloader/bootloader.bin build/bootloader/bootloader.bin-unsigned
             espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output ${{ env.BINARY_PATH }} ${{ env.BINARY_PATH }}-unsigned
-            espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output ${{ env.PROJECT_NAME }}/build/bootloader/bootloader.bin ${{ env.PROJECT_NAME }}/build/bootloader/bootloader.bin-unsigned
+            espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output build/bootloader/bootloader.bin build/bootloader/bootloader.bin-unsigned
             rm key.pem
 
       - name: Define artifact names
