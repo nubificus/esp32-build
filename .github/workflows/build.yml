@@ -141,6 +141,7 @@ jobs:
           image: ${{ inputs.builder_image }}
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
+            apt update && apt install -y xxd
             cd /esp-idf && . ./export.sh
             cd /work
             . ./app_env_exports.sh
@@ -181,6 +182,7 @@ jobs:
           image: ${{ inputs.builder_image }}
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
+            apt update && apt install -y xxd
             cd /esp-idf && . ./export.sh
             cd /work
             . ./app_env_exports.sh
