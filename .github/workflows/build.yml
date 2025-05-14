@@ -137,10 +137,8 @@ jobs:
           image: ${{ inputs.builder_image }}
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
-            # Convert matrix.app JSON object into environment variables dynamically
             echo '${{ toJson(matrix.app) }}' | jq -r 'to_entries[] | "export \(.key)=\(.value)"' >> /tmp/set_env.sh
             source /tmp/set_env.sh
-
             cd /esp-idf && . ./export.sh
             cd /work
             export DEVICE_TYPE=${{ matrix.target }}
@@ -180,10 +178,8 @@ jobs:
           image: ${{ inputs.builder_image }}
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
-            # Convert matrix.app JSON object into environment variables dynamically
             echo '${{ toJson(matrix.app) }}' | jq -r 'to_entries[] | "export \(.key)=\(.value)"' >> /tmp/set_env.sh
             source /tmp/set_env.sh
-
             cd /esp-idf && . ./export.sh
             cd /work
             export DEVICE_TYPE=${{ matrix.target }}
