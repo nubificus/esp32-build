@@ -57,7 +57,7 @@ jobs:
       fail-fast: true
     env:
       ARCH: ${{ fromJson(inputs.runner-arch-map)[0][matrix.arch] }}
-      DEFAULT_UPPATH: ${{ format('{0}/{1}', 'nbfc-assets/github/iot', matrix.target) || '' }}
+      DEFAULT_UPPATH: ${{ format('{0}/{1}/{2}', 'nbfc-assets/github/iot', matrix.target, matrix.flash_size) || '' }}
       REGISTRY: ${{ inputs.registry }}
       IMAGE_NAME: ${{ inputs.registry }}/nubificus/esp32-${{ matrix.app.type }}
       ESP32_KEY: ${{ secrets[matrix.key] }}
@@ -67,6 +67,13 @@ jobs:
       security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
       id-token: write # to complete the identity challenge with sigstore/fulcio when running outside of PRs
 
+    outputs:
+      partitions-csv-name: ${{ steps.set-outputs.outputs.partitions-csv-name }} 
+      sdkconfig-name: ${{ steps.set-outputs.outputs.sdkconfig-name }}
+      ota-data-initial-name: ${{ steps.set-outputs.outputs.ota-data-initial-name }}
+      partition-table-bin-name: ${{ steps.set-outputs.outputs.partition-table-bin-name }}
+      bootloader-bin-name: ${{ steps.set-outputs.outputs.bootloader-bin-name }}
+      binary-name: ${{ steps.set-outputs.outputs.binary-name }}
 
     steps:
       - name: Checkout .github directory
@@ -194,8 +201,47 @@ jobs:
             idf.py set-target ${{ matrix.target }}
             idf.py build
             espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output ${{ env.BINARY_PATH }}-signed ${{ env.BINARY_PATH }}
+            espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output ${{ env.BOOTLOADER_BIN_PATH }}-signed ${{ env.BOOTLOADER_BIN_PATH }}
             mv ${{ env.BINARY_PATH }}-signed ${{ env.BINARY_PATH }}
             rm key.pem
+
+      - name: Define artifact names
+        id: define-names
+        run: |
+            echo "PARTITIONS_CSV_NAME=partitions.csv" >> "$GITHUB_ENV"
+            echo "SDKCONFIG_NAME=sdkconfig" >> "$GITHUB_ENV"
+            echo "OTA_DATA_INITIAL_NAME=ota_data_initial.bin" >> "$GITHUB_ENV"
+            echo "PARTITION_TABLE_BIN_NAME=partition-table.bin" >> "$GITHUB_ENV"
+            echo "BOOTLOADER_BIN_NAME=bootloader.bin" >> "$GITHUB_ENV"
+
+      - name: Define Paths
+        id: define-paths
+        run: |
+            echo "PARTITIONS_CSV_PATH=${{ env.PROJECT_NAME }}/${{ env.PARTITIONS_CSV_NAME }}" >> "$GITHUB_ENV"
+            echo "SDKCONFIG_PATH=${{ env.PROJECT_NAME }}/${{ env.SDKCONFIG_NAME }}" >> "$GITHUB_ENV"
+            echo "OTA_DATA_INITIAL_PATH=${{ env.PROJECT_NAME }}/build/${{ env.OTA_DATA_INITIAL_NAME }}" >> "$GITHUB_ENV"
+            echo "PARTITION_TABLE_BIN_PATH=${{ env.PROJECT_NAME }}/build/partition_table/${{ env.PARTITION_TABLE_BIN_NAME }}" >> "$GITHUB_ENV"
+            echo "BOOTLOADER_BIN_PATH=${{ env.PROJECT_NAME }}/build/bootloader/${{ env.BOOTLOADER_BIN_NAME }}" >> "$GITHUB_ENV"
+            echo "BINARY_PATH=${{ env.PROJECT_NAME }}/build/${{ env.BINARY_NAME }}" >> "$GITHUB_ENV"
+
+      - name: Gather artifacts
+        id: gather-files
+        run: |
+            mkdir -p ${{ github.workspace }}/artifacts
+            cp ${{ env.BINARY_PATH }} ${{ github.workspace }}/artifacts/${{ env.BINARY_NAME }}
+            if [ -f "${{ env.BINARY_PATH }}-signed" ]; then
+              cp ${{ env.BINARY_PATH }}-signed ${{ github.workspace }}/artifacts/${{ env.BINARY_NAME }}-signed
+            fi
+            cp ${{ env.BOOTLOADER_BIN_PATH }} ${{ github.workspace }}/artifacts/${{ env.BOOTLOADER_BIN_NAME }}
+            if [ -f "${{ env.BOOTLOADER_BIN_PATH }}-signed" ]; then
+              cp ${{ env.BOOTLOADER_BIN_PATH }}-signed ${{ github.workspace }}/artifacts/${{ env.BOOTLOADER_BIN_NAME }}-signed
+            fi
+            cp ${{ env.BOOTLOADER_BIN_PATH }} ${{ github.workspace }}/artifacts/${{ env.BOOTLOADER_BIN_NAME }}-signed
+            cp ${{ env.PARTITION_TABLE_BIN_PATH }} ${{ github.workspace }}/artifacts/${{ env.PARTITION_TABLE_BIN_NAME }}
+            cp ${{ env.SDKCONFIG_PATH }} ${{ github.workspace }}/artifacts/${{ env.SDKCONFIG_NAME }}
+            cp ${{ env.OTA_DATA_INITIAL_PATH }} ${{ github.workspace }}/artifacts/${{ env.OTA_DATA_INITIAL_NAME }}
+            cp ${{ env.PARTITIONS_CSV_PATH }} ${{ github.workspace }}/artifacts/${{ env.PARTITIONS_CSV_NAME }}
+            ls -la ${{ github.workspace }}/artifacts
 
       - name: Upload firmware to s3
         if: ${{ inputs.upload || github.event_name == 'workflow_dispatch' }}
@@ -204,7 +250,7 @@ jobs:
           url: https://s3.nubificus.co.uk
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          local-path: ${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }}
+          local-path: artifacts
           remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}
           policy: 1
 
