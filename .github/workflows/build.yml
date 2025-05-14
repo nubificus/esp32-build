@@ -129,6 +129,10 @@ jobs:
           echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
         working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
+      - name: Prepare app environment exports
+        run: |
+          echo '${{ toJson(matrix.app) }}' | jq -r 'to_entries[] | "export \(.key)=\(.value)"' > ${{ github.workspace }}/${{ env.PROJECT_NAME }}/app_env_exports.sh
+
       - name: Build non-signed Firmware
         uses: nubificus/docker-run-action@v4
         id: build_firmware
@@ -137,10 +141,9 @@ jobs:
           image: ${{ inputs.builder_image }}
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
-            echo '${{ toJson(matrix.app) }}' | jq -r 'to_entries[] | "export \(.key)=\(.value)"' >> /tmp/set_env.sh
-            source /tmp/set_env.sh
             cd /esp-idf && . ./export.sh
             cd /work
+            . ./app_env_exports.sh
             export DEVICE_TYPE=${{ matrix.target }}
             export FLASH_SIZE=${{ matrix.flash_size }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
@@ -178,10 +181,9 @@ jobs:
           image: ${{ inputs.builder_image }}
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
-            echo '${{ toJson(matrix.app) }}' | jq -r 'to_entries[] | "export \(.key)=\(.value)"' >> /tmp/set_env.sh
-            source /tmp/set_env.sh
             cd /esp-idf && . ./export.sh
             cd /work
+            . ./app_env_exports.sh
             export DEVICE_TYPE=${{ matrix.target }}
             export FLASH_SIZE=${{ matrix.flash_size }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
