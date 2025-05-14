@@ -238,9 +238,9 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=${{ matrix.key }}${{ matrix.target }}-${{ matrix.app.version }}-
+            type=sha,prefix=${{ matrix.key }}${{ matrix.target }}-${{ matrix.flash_size }}-${{ matrix.app.version }}-
  
-      - name: Build and push ${{ matrix.app.type }}-${{ matrix.target }}
+      - name: Build and push ${{ matrix.app.type }}-${{ matrix.target }}-${{ matrix.flash_size }}
         id: build-and-push
         uses: docker/build-push-action@master
         with:
@@ -259,11 +259,11 @@ jobs:
           #build-contexts: |
           # ${{ steps.base-image-calculator.outputs.base_image }}
           provenance: false
- 
+
       - name: Get image digest
         run: |
           echo "IMAGE_DIGEST=$(docker inspect \
-          ${{ env.IMAGE_NAME }}:${{ matrix.key }}${{ matrix.target }}-${{ matrix.app.version }}-${{ env.SHA_SHORT }} | \
+          ${{ env.IMAGE_NAME }}:${{ matrix.key }}${{ matrix.target }}-${{ matrix.flash_size }}-${{ matrix.app.version }}-${{ env.SHA_SHORT }} | \
           jq -r '.[0].Id')" >> $GITHUB_ENV
 
       - name: Install cosign
@@ -320,8 +320,9 @@ jobs:
           amend_command=""
 
           for arch in $(echo $runner_archs | jq -r '.[]'); do
-            #amend_command+=" --amend ${{ env.REGISTRY }}/${{ matrix.app.repo }}:$arch-${{ env.SHA_SHORT }}"
-            amend_command+=" --amend ${{ env.IMAGE_NAME }}:${{ matrix.key }}$arch-${{ env.VER }}-${{ env.SHA_SHORT }}"
+            for flash_size in $(echo '${{ inputs.flash_sizes }}' | jq -r '.[]'); do
+              amend_command+=" --amend ${{ env.IMAGE_NAME }}:${{ matrix.key }}$arch-$flash_size-${{ env.VER }}-${{ env.SHA_SHORT }}"
+            done
           done
 
           echo "-------------------- Amend command constructed -------------------"

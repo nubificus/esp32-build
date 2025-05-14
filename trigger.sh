@@ -4,16 +4,7 @@
 #json_input='{ "apps":[ {"repo":"nubificus/esp32-ota-update","branch":"feat_http_server","version":"0.3.0","type":"thermo"},{"repo":"nubificus/esp32-ota-update","branch":"feat_http_server","version":"0.2.0","type":"thermo"},{"repo":"nubificus/esp32-ota-update","branch":"feat_http_server","version":"0.3.0","type":"switch"},{"repo":"nubificus/esp32-ota-update","branch":"feat_http_server","version":"0.2.0","type":"switch"} ], "targets":["esp32"], "keys":["ESP32_KEY1","ESP32_KEY2"] }'
 #json_input='{ "apps":[ {"repo":"nubificus/esp32-ota-update","branch":"feat_example_repo","version":"0.4.1","type":"thermo"} ], "targets":["esp32"], "keys":["ESP32_KEY1","ESP32_KEY2"] }'
 # json_input='{ "apps":[ {"repo":"nubificus/fmnist-esp-ota","branch":"feat_build_actions","version":"0.4.1","type":"fmnist", "model":"models/resnet8_frozen.tflite" } ], "targets":["esp32","esp32s2","esp32s3", "esp32c6"], "keys":[""] }'
-json_input='{ "apps":[ {"repo":"nubificus/fmnist-esp-ota",
-						"branch":"feat_build_actions",
-						"version":"0.4.1",
-						"type":"fmnist",
-						"model":"models/simple_cnn_tf_frozen.tflite",
-						"tensor_allocation_space":"204800",
-						} ],
-			"flash_sizes":["4MB","8MB"],
-			"targets":["esp32s3"],
-			"keys":[""] }'
+json_input='{ "apps":[ {"repo":"nubificus/fmnist-esp-ota","branch":"feat_build_actions","version":"0.4.1","type":"fmnist","model":"models/simple_cnn_tf_frozen.tflite","tensor_allocation_space":"204800"} ], "flash_sizes":["4MB","8MB"], "targets":["esp32s3"], "keys":[""] }'
 #json_input='{"apps":[{"repo":"nubificus/esp32-ota-update","branch":"feat_http_server"}],"targets":["esp32","esp32s2","esp32s3"],"keys":["ESP32_KEY1","ESP32_KEY2"]}'
 
 # Properly escape the JSON using jq and convert to a single line
