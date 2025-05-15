@@ -255,6 +255,17 @@ jobs:
           remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}
           policy: 1
 
+      - name: Set output
+        id: set-outputs
+        run: |
+          echo "partitions-csv-name=${{ env.PARTITIONS_CSV_NAME }}" >> "$GITHUB_OUTPUT"
+          echo "sdkconfig-name=${{ env.SDKCONFIG_NAME }}" >> "$GITHUB_OUTPUT"
+          echo "ota-data-initial-name=${{ env.OTA_DATA_INITIAL_NAME }}" >> "$GITHUB_OUTPUT"
+          echo "partition-table-bin-name=${{ env.PARTITION_TABLE_BIN_NAME }}" >> "$GITHUB_OUTPUT"
+          echo "bootloader-bin-name=${{ env.BOOTLOADER_BIN_NAME }}" >> "$GITHUB_OUTPUT"
+          echo "binary-name=${{ env.BINARY_NAME }}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
       - name: Set short SHA
         run: echo "SHA_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
@@ -290,7 +301,7 @@ jobs:
           #file: ${{ inputs.dockerfile }}
           file: ./Dockerfile.firmware
           build-args: |
-             BINARY=${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }}
+             BINARY=${{ env.BINARY_PATH }}
              FIRMWARE=${{ env.BINARY_NAME }}
           #build-contexts: |
           # ${{ steps.base-image-calculator.outputs.base_image }}
@@ -387,4 +398,4 @@ jobs:
           #id: parse_cmakelists
           #working-directory: ${{ github.workspace }}/${{ env.PROJECT_NAME }}
           #run: |
-          #docker buildx build --platform custom/esp32 -t harbor.nbfc.io/nubificus/${{ env.PROJECT_NAME }}:${{ matrix.target }} --build-arg BINARY=${{ env.PROJECT_NAME }}/${{ env.BINARY_PATH }} . --push --provenance false
+          #docker buildx build --platform custom/esp32 -t harbor.nbfc.io/nubificus/${{ env.PROJECT_NAME }}:${{ matrix.target }} --build-arg BINARY=${{ env.BINARY_PATH }} . --push --provenance false
