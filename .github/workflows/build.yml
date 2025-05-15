@@ -124,9 +124,6 @@ jobs:
       - name: Prepare app environment exports
         run: |
           echo '${{ toJson(matrix.app) }}' | jq -r 'to_entries[] | "export \(.key)=\(.value)"' > ${{ github.workspace }}/${{ env.PROJECT_NAME }}/app_env_exports.sh
-          cat ${{ github.workspace }}/${{ env.PROJECT_NAME }}/app_env_exports.sh
-          ls ${{ github.workspace }}
-          ls ${{ github.workspace }}/${{ env.PROJECT_NAME }}
 
       - name: Build non-signed Firmware
         uses: nubificus/docker-run-action@v4

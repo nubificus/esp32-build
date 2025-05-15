@@ -13,29 +13,31 @@ BAUD=460800
 
 # Parse arguments
 while [ "$#" -gt 0 ]; do
-  key="$1"
-  value="$2"
+	key="$1"
+	value="$2"
 
-  case "$key" in
-    --port)
-      PORT="$value"
-      ;;
-    --chip)
-      CHIP="$value"
-      ;;
-    --flash_size)
-      FLASH="$value"
-      ;;
-    --baud)
-      BAUD="$value"
-      ;;
-    *)
-      echo "Error: Unknown option '$key'"
-      exit 1
-      ;;
-  esac
-
-  shift 2
+	case "$key" in
+		--port)
+			PORT="$value"
+			;;
+		--chip)
+			CHIP="$value"
+			;;
+		--flash_size)
+			FLASH="$value"
+			;;
+		--override_pt)
+			OVERRIDE_PT_VAL="$value"
+			;;
+		--baud)
+			BAUD="$value"
+			;;
+		*)
+			echo "Error: Unknown option '$key'"
+			exit 1
+			;;
+	esac
+	shift 2
 done
 
 # Validate required values
@@ -62,9 +64,24 @@ else
 	echo "Bootloader: ${BOOTPATH}"
 fi
 
-TABLEPATH=$ARTIFACTS_PATH/partition-table.bin
+if [ -z "$OVERRIDE_PT_VAL" ]; then
+	TABLEPATH=$ARTIFACTS_PATH/partition-table.bin
+else
+	if [ "$OVERRIDE_PT_VAL" = "normal" ]; then
+		./ptmaker.sh $FLASH > generated_pt.csv
+		python3 gen_esp32part.py generated_pt.csv custom-partition-table.bin
+		TABLEPATH=custom-partition-table.bin
+	elif [ "$OVERRIDE_PT_VAL" = "with_model" ]; then
+		echo "\"with_model\" option is not supported YET in --override_pt, use \"normal\" instead"
+		exit 1
+	else
+		echo "Unknown option ${OVERRIDE_PT_VAL} in --override_pt, exit"
+		exit 1
+	fi
+fi
+
 if [ ! -f "$TABLEPATH" ]; then
-	echo "No partition table file at ${TABLEPATH}"
+	echo "No partition table at ${TABLEPATH}"
 	exit 1
 else
 	echo "Partition table: ${TABLEPATH}"
@@ -85,7 +102,7 @@ if [ -z "$IMGNAME" ]; then
 	exit 1
 fi
 
-IMGPATH="$ARTIFACTS_PATH/${IMGNAME}"
+IMGPATH="${ARTIFACTS_PATH}/${IMGNAME}"
 if [ ! -f "$IMGPATH" ]; then
 	echo "No binary app file at ${IMGPATH}"
 	exit 1
@@ -114,23 +131,34 @@ if [ -z "$TABLEOFF" ]; then
 fi
 echo "Partition table to be flashed at offset $TABLEOFF"
 
-if grep -qE '^CONFIG_PARTITION_TABLE_CUSTOM=y' "${SDKCONFIG}"; then
+
+
+if grep -qE '^CONFIG_PARTITION_TABLE_CUSTOM=y' "${SDKCONFIG}" || [ ! -z "$OVERRIDE_PT_VAL" ]
+then
 	echo "Custom partition table, parsing.."
-	partitions=$(grep -E '^CONFIG_PARTITION_TABLE_FILENAME=' "${SDKCONFIG}" | cut -d'=' -f2 | sed 's/^"//; s/"$//')
-	if [ -z "$partitions" ]; then
-		echo "Custom partitions file is not set"
-		exit 1
+	if [ ! -z "$OVERRIDE_PT_VAL" ]
+	then
+		partitions=generated_pt.csv
+	else
+		partitions="$ARTIFACTS_PATH/$(grep -E '^CONFIG_PARTITION_TABLE_FILENAME=' "${SDKCONFIG}" | cut -d'=' -f2 | sed 's/^"//; s/"$//')"
 	fi
-	partitions="$ARTIFACTS_PATH/${partitions}"
-	if [ ! -f "$partitions" ]; then
-		echo "Custom partition CSV does not exist"
+
+	if [ -z "$partitions" ] || [ ! -f "$partitions" ]
+	then
+		echo "Custom partitions csv file is not set or does not exist"
 		exit 1
+	else
+		printf "Found custom partition table csv -- ${partitions}:\n\n"
+		cat $partitions
+		printf "\n"
 	fi
+
 	IMGOFF=$(awk -F',' ' $1 ~ /^[[:space:]]*factory[[:space:]]*$/ && $2 ~ /app/ && $3 ~ /factory/ { gsub(/[[:space:]]*/, "", $4); print $4; found=1 } END { if (!found) exit 1 }' "$partitions")
 	if [ $? -ne 0 ] || [ -z "$IMGOFF" ]; then
 		echo "Factory app partition not found in partitions CSV"
 		exit 1
 	fi
+
 	OTAOFF=$(awk -F',' ' $1 ~ /^[[:space:]]*otadata[[:space:]]*$/ && $2 ~ /data/ && $3 ~ /ota/ { gsub(/[[:space:]]*/, "", $4); print $4; found=1 } END { if (!found) exit 1 } ' "$partitions")
 	if [ $? -ne 0 ] || [ -z "$OTAOFF" ]; then
 		echo "otadata partition not found in partitions CSV"
