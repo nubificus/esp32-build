@@ -41,7 +41,87 @@ on:
         default: false
 
 jobs:
+  upload-model:
+    name: Upload Model to S3
+    runs-on: [base-dind-2204-amd64]
+    strategy:
+      matrix:
+        app: ["${{ fromJSON(inputs.apps) }}"]
+    env:
+      DEFAULT_UPPATH: 'nbfc-assets/github/iot'
+      REGISTRY: ${{ inputs.registry }}
+    permissions:
+      contents: write
+      packages: write
+      security-events: write
+      id-token: write
+
+    steps:
+      - name: Check if input model exists
+        id: check_model_input_exists
+        run: |
+            json="$MATRIX_APP"
+            hasmodel=$(echo "$json" | jq 'has("model")')
+            echo "exists=$hasmodel" >> $GITHUB_OUTPUT
+        shell: bash
+        env:
+          MATRIX_APP: ${{ toJson(matrix.app) }}
+
+      - name: Determine project name
+        id: project_name
+        if: steps.check_model_input_exists.outputs.exists == 'true' 
+        run: |
+          project_name=$(basename "${{ matrix.app.repo }}")
+          echo "Project name: $project_name"
+          echo "PROJECT_NAME=$project_name" >> $GITHUB_ENV
+
+      - name: Checkout app repo
+        if: steps.check_model_input_exists.outputs.exists == 'true' 
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.app.repo }}
+          ref: ${{ matrix.app.branch }}
+          path: ${{ env.PROJECT_NAME }}
+          token: ${{ secrets.ORG_PAT || github.token }}
+          submodules: 'recursive'
+
+      - name: Ensure model file exists
+        id: check_model_path_exists
+        if: steps.check_model_input_exists.outputs.exists == 'true' 
+        run: |
+            if [ -f "${{ env.PROJECT_NAME }}/${{ matrix.app.model }}" ]; then
+              cp "${{ env.PROJECT_NAME }}/${{ matrix.app.model }}" ./model.bin
+              SHOULD_UPLOAD=true
+              echo "exists=$SHOULD_UPLOAD" >> $GITHUB_OUTPUT
+            else
+              SHOULD_UPLOAD=false
+              echo "exists=$SHOULD_UPLOAD" >> $GITHUB_OUTPUT
+            fi
+        shell: bash
+
+      - name: Upload model to s3
+        if: steps.check_model_path_exists.outputs.exists == 'true' && (inputs.upload || github.event_name == 'workflow_dispatch')
+        uses: cloudkernels/minio-upload@v4.1
+        with:
+          url: https://s3.nubificus.co.uk
+          access-key: ${{ secrets.AWS_ACCESS_KEY }}
+          secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          local-path: model.bin
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}
+          policy: 1
+
+      - name: Remove model binary file
+        if: steps.check_model_path_exists.outputs.exists == 'true'
+        run: |
+            rm model.bin
+
+      - name: Remove the repository
+        if: steps.check_model_input_exists.outputs.exists == 'true'
+        run: |
+            rm -rf ${{ env.PROJECT_NAME }}
+
   build-firmware:
+    needs: [upload-model]
     name: Build App ${{ matrix.app.type }}-${{ matrix.target }}
     #runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
     runs-on: [base-dind-2204-amd64]
@@ -134,13 +214,13 @@ jobs:
           run: |
             cd /work
             apt update && apt install -y xxd
-            export FIRMWARE_VERSION=${{ matrix.app.version }}
-            export APPLICATION_TYPE=${{ matrix.app.type }}
+            . ./app_env_exports.sh
+            export FIRMWARE_VERSION=$version
+            export APPLICATION_TYPE=$type
             export DEVICE_TYPE=${{ matrix.target }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
             export OTA_SECURE=1
-            . ./app_env_exports.sh
             idf.py set-target ${{ matrix.target }}
             idf.py build
 
