@@ -88,7 +88,7 @@ ENV IDF_PYTHON_CHECK_CONSTRAINTS=no
 # Ccache is installed, enable it by default
 ENV IDF_CCACHE_ENABLE=1
 
-COPY entrypoint.sh /opt/esp/entrypoint.sh
+COPY scripts/entrypoint.sh /opt/esp/entrypoint.sh
 RUN chmod +x /opt/esp/entrypoint.sh
 ENTRYPOINT [ "/opt/esp/entrypoint.sh" ]
 
