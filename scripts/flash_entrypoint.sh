@@ -47,6 +47,7 @@ if [ -z "$PORT" ] || [ -z "$CHIP" ] || [ -z "$FLASH" ]; then
 fi
 
 ARTIFACTS_PATH=/firmware/$CHIP/artifacts
+MODEL="/firmware/model.bin"
 
 SDKCONFIG=$ARTIFACTS_PATH/sdkconfig
 if [ ! -f "$SDKCONFIG" ]; then
@@ -69,15 +70,20 @@ if [ -z "$OVERRIDE_PT_VAL" ]; then
 else
 	if [ "$OVERRIDE_PT_VAL" = "normal" ]; then
 		./ptmaker.sh $FLASH > generated_pt.csv
-		python3 gen_esp32part.py generated_pt.csv custom-partition-table.bin
-		TABLEPATH=custom-partition-table.bin
 	elif [ "$OVERRIDE_PT_VAL" = "with_model" ]; then
-		echo "\"with_model\" option is not supported YET in --override_pt, use \"normal\" instead"
-		exit 1
+		if [ -f "$MODEL" ]; then
+			./ptmaker.sh $FLASH $MODEL > generated_pt.csv
+		else
+			echo "You asked for a model partition, but no model is available at /firmware/"
+			exit 1
+		fi
 	else
 		echo "Unknown option ${OVERRIDE_PT_VAL} in --override_pt, exit"
 		exit 1
 	fi
+
+	python3 gen_esp32part.py generated_pt.csv custom-partition-table.bin
+	TABLEPATH=custom-partition-table.bin
 fi
 
 if [ ! -f "$TABLEPATH" ]; then
@@ -118,9 +124,9 @@ if grep -qE '^CONFIG_SECURE_BOOT_FLASH_BOOTLOADER_DEFAULT=y' "${SDKCONFIG}"; the
 		exit 1
 	fi
 	echo "Bootloader to be flashed at offset $BOOTOFF"
-	FLASHBOOT="true"
+	FLASH_BOOTL="true"
 else
-	FLASHBOOT="false"
+	FLASH_BOOTL="false"
 	echo "The bootloader won't be flashed"
 fi
 
@@ -164,6 +170,19 @@ then
 		echo "otadata partition not found in partitions CSV"
 		exit 1
 	fi
+
+	TFLITE_PART=$(grep -e "^tflite_model," "$partitions")
+	if [ ! -z "$TFLITE_PART" ] && [ -f $MODEL ]; then
+		TFLITE_OFF=$(echo "$TFLITE_PART" | awk '{ print $4 }' | tr -d ',')
+		if [ -z "$TFLITE_OFF" ]; then
+			echo "There is a tflite partition but could not extracted the tflite offset. Exit."
+			exit 1
+		else
+			FLASH_TFLITE="true"
+		fi
+	fi
+
+	if [ -z "$res" ]; then echo "Not Found"; else echo "Found it!"; fi
 else
 	echo "No custom partition table, parsing sdkconfig"
 	if grep -qE '^CONFIG_PARTITION_TABLE_TWO_OTA=y' "${SDKCONFIG}"; then
@@ -183,10 +202,16 @@ echo "PARTITION OFFSET  = $TABLEOFF"
 echo "APP OFFSET        = $IMGOFF"
 echo "OTADATA OFFSET    = $OTAOFF"
 
+AMEND=""
 
-if [ "$FLASHBOOT" = "true" ]; then
+if [ "$FLASH_BOOTL" = "true" ]; then
+	AMEND+=" $BOOTOFF $BOOTPATH"
 	echo "BOOTLOADER OFFSET = $BOOTOFF"
-	esptool.py --port "$PORT" --chip "$CHIP" --baud $BAUD --no-stub write_flash --flash_size "$FLASH" "$TABLEOFF" "$TABLEPATH" "$IMGOFF" "$IMGPATH" "$OTAOFF" "$OTAPATH" "$BOOTOFF" "$BOOTPATH"
-else
-	esptool.py --port "$PORT" --chip "$CHIP" --baud $BAUD --no-stub write_flash --flash_size "$FLASH" "$TABLEOFF" "$TABLEPATH" "$IMGOFF" "$IMGPATH" "$OTAOFF" "$OTAPATH"
 fi
+
+if [ "$FLASH_TFLITE" = "true" ]; then
+	AMEND+=" $TFLITE_OFF $MODEL"
+	echo "TFLITE OFFSET = $TFLITE_OFF"
+fi
+
+esptool.py --port "$PORT" --chip "$CHIP" --baud $BAUD --no-stub write_flash --flash_size "$FLASH" "$TABLEOFF" "$TABLEPATH" "$OTAOFF" "$OTAPATH" "$IMGOFF" "$IMGPATH" $AMEND

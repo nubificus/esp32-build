@@ -2,7 +2,7 @@
 
 show_help() {
     cat <<EOF
-Usage: $(basename "$0") [--help] flash-size
+Usage: $(basename "$0") [--help] flash-size [tflite-file]
 
 The flash size should be provided in bytes, kilobytes, megabytes or
 gigabytes. For example, for 1MB flash size:
@@ -14,12 +14,14 @@ or
 $(basename "$0") 1MB
 
 This script calculates the maximum equal size for 3 app partitions and
-generate a partition table based on the given flash size.
+optionally a tflite partition and generates a partition table based on
+the given flash size.
 
 Each image starts at a 64KB-aligned offset.
+The tflite partition starts at a 4KB-aligned offset.
 
 Output:
-  - Optimal partition table (apps aligned)
+  - Optimal partition table (partitions properly aligned)
 EOF
 }
 
@@ -64,17 +66,47 @@ case "$unit" in
 esac
 
 flash_size=$((value * multiplier))
-
 align=$((0x10000))
-ota_off=$(($flash_size-$align))
-ota_size=$((0x2000))
-
 app_off=$((0x20000))
 
-avail=$(($ota_off - $app_off))
+# Check if the second argument exists and if it does it should be an existent tflite file
+if [[ -n "$2" ]]; then
+	tflite_file="$2"
+	if [[ ! -f "$tflite_file" ]]; then
+		>&2 echo "# Error: TFLite file '$tflite_file' does not exist."
+		exit 1
+	fi
+else
+	tflite_file=""
+fi
+
+if [[ -n "$tflite_file" ]]; then
+        tflite_size=$(stat -c %s "$tflite_file")
+
+        # Align the tflite size to 4KB i.e. round up to the closest multiple of 4KB
+        tflite_aligned_size=$(((tflite_size + 0xFFF) & ~0xFFF ))
+
+        # Ensure there is enough space for the tflite model
+        tflite_off=$(($flash_size - $tflite_aligned_size))
+        if (( tflite_off < ota0_off )); then
+                >&2 echo "# Error: TFLite file size exceeds available space."
+                exit 1
+        fi
+
+        # Ensure the tflite offset is 4KB aligned
+        if (( tflite_off % 0x1000 != 0 )); then
+                >&2 echo "# Error: TFLite offset $tflite_off is not 4KB aligned."
+                exit 1
+        fi
+
+        avail=$(($tflite_off - $app_off))
+else
+        tflite_aligned_size=0
+        tflite_off=0
+        avail=$(($flash_size - $app_off))
+fi
 
 max_image_size=$((avail / 3))
-
 aligned_image_size=$(( (max_image_size / align) * align ))
 
 image1_off=$app_off
@@ -92,21 +124,26 @@ apps_size=$(printf "0x%X" "$aligned_image_size")
 app_off=$(printf "0x%X" "$image1_off")
 ota0_off=$(printf "0x%X" "$image2_off")
 ota1_off=$(printf "0x%X" "$image3_off")
-ota_off=$(printf "0x%X" "$ota_off")
-ota_size=$(printf "0x%X" "$ota_size")
 
 comments="# Name,       Type, SubType, Offset,   Size,    Flags"
 nvs_entry="nvs,          data, nvs,     0x11000,  0x6000,"
 phy_entry="phy_init,     data, phy,     0x17000,  0x1000,"
+ota_entry="otadata,      data, ota,     0x18000,  0x2000,"
 app_entry="factory,      app,  factory, $app_off,  $apps_size,"
 ota0_entry="ota_0,        app,  ota_0,   $ota0_off, $apps_size,"
 ota1_entry="ota_1,        app,  ota_1,   $ota1_off, $apps_size,"
-ota_entry="otadata,      data, ota,     $ota_off, $ota_size,"
 
 echo $comments
 echo $nvs_entry
 echo $phy_entry
+echo $ota_entry
 echo $app_entry
 echo $ota0_entry
 echo $ota1_entry
-echo $ota_entry
+
+if (( tflite_aligned_size > 0 )); then
+	model_size=$(printf "0x%X" "$tflite_aligned_size")
+	model_off=$(printf "0x%X" "$tflite_off")
+	tflite_entry="tflite_model, data, spiffs, $model_off, $model_size,"
+	echo $tflite_entry
+fi
