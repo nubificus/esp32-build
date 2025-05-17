@@ -107,7 +107,7 @@ jobs:
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           local-path: model.bin
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{github.run_id}}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}
           policy: 1
 
       - name: Remove model binary file
@@ -295,7 +295,7 @@ jobs:
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           local-path: artifacts
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}/${{ matrix.target }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{github.run_id}}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}/${{ matrix.target }}
           policy: 1
 
       - name: Set output
@@ -383,7 +383,7 @@ jobs:
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           local-path: /github/workspace/
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}/${{ matrix.target }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{github.run_id}}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}/${{ matrix.target }}
           policy: 1
 
       - name: Build and push ${{ matrix.app.type }}-${{ matrix.target }} (Firmware)
@@ -483,7 +483,7 @@ jobs:
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           local-path: /github/workspace/${{ env.PROJECT_NAME }}
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{github.run_id}}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}
           policy: 1
 
       - name: Build and push ${{ matrix.app.type }}-${{ matrix.arch }}
