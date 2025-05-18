@@ -221,6 +221,7 @@ jobs:
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
             export OTA_SECURE=1
+            if [ ! -z "$prebuild" ] && [ -f "$prebuild" ]; then . "./$prebuild"; fi
             idf.py set-target ${{ matrix.target }}
             idf.py build
 
