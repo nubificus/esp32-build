@@ -68,23 +68,22 @@ fi
 if [ -z "$OVERRIDE_PT_VAL" ]; then
 	TABLEPATH=$ARTIFACTS_PATH/partition-table.bin
 else
-	ptmaker=./ptmaker.sh
 	if [ "$OVERRIDE_PT_VAL" = "normal" ]; then
-		$ptmaker $FLASH > ./firmware/generated_pt.csv
+		./ptmaker.sh $FLASH > generated_pt.csv
 	elif [ "$OVERRIDE_PT_VAL" = "normal_with_model" ]; then
 		if [ -f "$MODEL" ]; then
-			$ptmaker $FLASH $MODEL > ./firmware/generated_pt.csv
+			./ptmaker.sh $FLASH $MODEL > generated_pt.csv
 		else
-			echo "You asked for a model partition, but no model is available at ./firmware/"
+			echo "You asked for a model partition, but no model is available at /firmware/"
 			exit 1
 		fi
 	elif [ "$OVERRIDE_PT_VAL" = "no_factory" ]; then
-		$ptmaker $FLASH --no_factory > ./firmware/generated_pt.csv
+		./ptmaker.sh $FLASH --no_factory > generated_pt.csv
 	elif [ "$OVERRIDE_PT_VAL" = "no_factory_with_model" ]; then
 		if [ -f "$MODEL" ]; then
-			$ptmaker $FLASH $MODEL --no_factory > ./firmware/generated_pt.csv
+			./ptmaker.sh $FLASH $MODEL --no_factory > generated_pt.csv
 		else
-			echo "You asked for a model partition, but no model is available at ./firmware/"
+			echo "You asked for a model partition, but no model is available at /firmware/"
 			exit 1
 		fi
 	else
@@ -222,6 +221,11 @@ fi
 if [ "$FLASH_TFLITE" = "true" ]; then
 	AMEND+=" $TFLITE_OFF $MODEL"
 	echo "TFLITE OFFSET = $TFLITE_OFF"
+fi
+
+psram_part=$(printf "%s" "$CHIP" | tail -c 2)
+if [ "$psram_part" = "r2" ] || [ "$psram_part" = "r8" ]; then
+	CHIP=$(printf "%s" "$CHIP" | cut -c1-$(expr $(printf "%s" "$CHIP" | wc -c) - 2))
 fi
 
 esptool.py --port "$PORT" --chip "$CHIP" --baud $BAUD --no-stub write_flash --force --flash_size "$FLASH" "$TABLEOFF" "$TABLEPATH" "$OTAOFF" "$OTAPATH" "$IMGOFF" "$IMGPATH" $AMEND

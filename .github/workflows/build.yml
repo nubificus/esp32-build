@@ -222,9 +222,10 @@ jobs:
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
             export OTA_SECURE=1
             psram_part=$(printf "%s" "$DEVICE_TYPE" | tail -c 2)
-            if [ "$psram_part" = "r2" ]; then export quad_psram=""; elif [ "$psram_part" = "r8" ]; then export oct_psram=""; fi
+            if [ "$psram_part" = "r2" ]; then export quad_psram=""; DEVICE_TYPE=$(printf "%s" "$DEVICE_TYPE" | cut -c1-$(expr $(printf "%s" "$DEVICE_TYPE" | wc -c) - 2)); fi
+            if [ "$psram_part" = "r8" ]; then export oct_psram=""; DEVICE_TYPE=$(printf "%s" "$DEVICE_TYPE" | cut -c1-$(expr $(printf "%s" "$DEVICE_TYPE" | wc -c) - 2)); fi
             if [ ! -z "$prebuild" ] && [ -f "$prebuild" ]; then . "./$prebuild"; fi
-            idf.py set-target ${{ matrix.target }}
+            idf.py set-target "$DEVICE_TYPE"
             idf.py build
 
       - name: Define artifact names
@@ -262,9 +263,12 @@ jobs:
         id: extract_signing_version
         if: ${{ inputs.keys != '[""]' }}
         run: |
-                if [ "${{ matrix.target }}" = "esp32" ]; then
+                DEVICE_TYPE=${{ matrix.target }}
+                psram_part=$(printf "%s" "$DEVICE_TYPE" | tail -c 2)
+                if [ "$psram_part" = "r2" ] || [ "$psram_part" = "r8" ]; then DEVICE_TYPE=$(printf "%s" "$DEVICE_TYPE" | cut -c1-$(expr $(printf "%s" "$DEVICE_TYPE" | wc -c) - 2)); fi
+                if [ "$DEVICE_TYPE" = "esp32" ]; then
                         echo "VERSION=1" >> $GITHUB_ENV
-                elif [ "${{ matrix.target }}" = "esp32s2" ] || [ "${{ matrix.target }}" = "esp32s3" ] || [ "${{ matrix.target }}" = "esp32c6" ]; then       
+                elif [ "$DEVICE_TYPE" = "esp32s2" ] || [ "$DEVICE_TYPE" = "esp32s3" ] || [ "$DEVICE_TYPE" = "esp32c6" ]; then
                         echo "VERSION=2" >> $GITHUB_ENV
                 else
                         echo "Error: Unsupported device type"
