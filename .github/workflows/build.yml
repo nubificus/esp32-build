@@ -221,8 +221,8 @@ jobs:
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
             export OTA_SECURE=1
-            psram_part=${DEVICE_TYPE: -2}
-            if [ "$psram_part" == "r2" ]; then export quad_psram=""; elif [ "$psram_part" == "r8" ]; then export oct_psram=""; fi
+            psram_part=$(printf "%s" "$DEVICE_TYPE" | tail -c 2)
+            if [ "$psram_part" = "r2" ]; then export quad_psram=""; elif [ "$psram_part" = "r8" ]; then export oct_psram=""; fi
             if [ ! -z "$prebuild" ] && [ -f "$prebuild" ]; then . "./$prebuild"; fi
             idf.py set-target ${{ matrix.target }}
             idf.py build
