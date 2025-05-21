@@ -6,7 +6,7 @@
 #json_input='{ "apps":[ {"repo":"nubificus/fmnist-esp-ota","branch":"feat_cleanup_components","version":"0.4.1","type":"fmnist"} ], "targets":["esp32","esp32s2","esp32s3"], "keys":[""] }'
 #json_input='{"apps":[{"repo":"nubificus/esp32-ota-update","branch":"feat_http_server"}],"targets":["esp32","esp32s2","esp32s3"],"keys":["ESP32_KEY1","ESP32_KEY2"]}'
 #json_input='{ "apps":[ {"repo":"nubificus/fmnist-esp-ota","branch":"feat_psram_resnet","version":"0.0.0","type":"resnet"} ], "targets":["esp32c6"], "builder_image": "espressif/idf:release-v5.4", "keys":["ESP32_KEY3"] }'
-json_input='{ "apps":[ {"repo":"nubificus/fmnist-esp-ota","branch":"feat_psram_resnet","version":"0.0.1","type":"resnet"} ], "targets":["esp32c6","esp32s3","esp32s2"], "builder_image": "harbor.nbfc.io/nubificus/esp-idf:x86_64-slim", "keys":["ESP32_KEY3"] }'
+json_input='{ "apps":[ {"repo":"nubificus/fmnist-esp-ota","branch":"feat_build_actions","version":"2.2.2","type":"resnet","model":"models/resnet8_frozen.tflite","tensor_allocation_space":"204800"}} ], "targets":["esp32s3","esp32s3r2", "esp32s3r8"], "builder_image": "harbor.nbfc.io/nubificus/esp-idf:x86_64-slim", "keys":["ESP32_KEY3"] }'
 
 # Properly escape the JSON using jq and convert to a single line
 escaped_json_input=$(echo "$json_input" | jq -Rc .)
