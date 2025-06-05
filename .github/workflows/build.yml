@@ -41,7 +41,87 @@ on:
         default: false
 
 jobs:
+  upload-model:
+    name: Upload Model to S3
+    runs-on: [base-dind-2204-amd64]
+    strategy:
+      matrix:
+        app: ["${{ fromJSON(inputs.apps) }}"]
+    env:
+      DEFAULT_UPPATH: 'nbfc-assets/github/iot'
+      REGISTRY: ${{ inputs.registry }}
+    permissions:
+      contents: write
+      packages: write
+      security-events: write
+      id-token: write
+
+    steps:
+      - name: Check if input model exists
+        id: check_model_input_exists
+        run: |
+            json="$MATRIX_APP"
+            hasmodel=$(echo "$json" | jq 'has("model")')
+            echo "exists=$hasmodel" >> $GITHUB_OUTPUT
+        shell: bash
+        env:
+          MATRIX_APP: ${{ toJson(matrix.app) }}
+
+      - name: Determine project name
+        id: project_name
+        if: steps.check_model_input_exists.outputs.exists == 'true' 
+        run: |
+          project_name=$(basename "${{ matrix.app.repo }}")
+          echo "Project name: $project_name"
+          echo "PROJECT_NAME=$project_name" >> $GITHUB_ENV
+
+      - name: Checkout app repo
+        if: steps.check_model_input_exists.outputs.exists == 'true' 
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.app.repo }}
+          ref: ${{ matrix.app.branch }}
+          path: ${{ env.PROJECT_NAME }}
+          token: ${{ secrets.ORG_PAT || github.token }}
+          submodules: 'recursive'
+
+      - name: Ensure model file exists
+        id: check_model_path_exists
+        if: steps.check_model_input_exists.outputs.exists == 'true' 
+        run: |
+            if [ -f "${{ env.PROJECT_NAME }}/${{ matrix.app.model }}" ]; then
+              cp "${{ env.PROJECT_NAME }}/${{ matrix.app.model }}" ./model.bin
+              SHOULD_UPLOAD=true
+              echo "exists=$SHOULD_UPLOAD" >> $GITHUB_OUTPUT
+            else
+              SHOULD_UPLOAD=false
+              echo "exists=$SHOULD_UPLOAD" >> $GITHUB_OUTPUT
+            fi
+        shell: bash
+
+      - name: Upload model to s3
+        if: steps.check_model_path_exists.outputs.exists == 'true' && (inputs.upload || github.event_name == 'workflow_dispatch')
+        uses: cloudkernels/minio-upload@v4.1
+        with:
+          url: https://s3.nubificus.co.uk
+          access-key: ${{ secrets.AWS_ACCESS_KEY }}
+          secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          local-path: model.bin
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{github.run_id}}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}
+          policy: 1
+
+      - name: Remove model binary file
+        if: steps.check_model_path_exists.outputs.exists == 'true'
+        run: |
+            rm model.bin
+
+      - name: Remove the repository
+        if: steps.check_model_input_exists.outputs.exists == 'true'
+        run: |
+            rm -rf ${{ env.PROJECT_NAME }}
+
   build-firmware:
+    needs: [upload-model]
     name: Build App ${{ matrix.app.type }}-${{ matrix.target }}
     #runs-on: ${{ format('{0}-{1}', join(fromJSON(inputs.runner), '-'), matrix.arch) }}
     runs-on: [base-dind-2204-amd64]
@@ -121,6 +201,10 @@ jobs:
         run: |
                 echo "Builder image: ${{ inputs.builder_image }}"
 
+      - name: Prepare app environment exports
+        run: |
+          echo '${{ toJson(matrix.app) }}' | jq -r 'to_entries[] | "export \(.key)=\(.value)"' > ${{ github.workspace }}/${{ env.PROJECT_NAME }}/app_env_exports.sh
+
       - name: Build non-signed Firmware
         uses: nubificus/docker-run-action@v4
         id: build_firmware
@@ -129,13 +213,19 @@ jobs:
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
             cd /work
-            export FIRMWARE_VERSION=${{ matrix.app.version }}
+            apt update && apt install -y xxd
+            . ./app_env_exports.sh
+            export FIRMWARE_VERSION=$version
+            export APPLICATION_TYPE=$type
             export DEVICE_TYPE=${{ matrix.target }}
-            export APPLICATION_TYPE=${{ matrix.app.type }}
             export WIFI_SSID=${{ secrets.NBFC_IOT_WIFI_SSID }}
             export WIFI_PASS=${{ secrets.NBFC_IOT_WIFI_PASS }}
             export OTA_SECURE=1
-            idf.py set-target ${{ matrix.target }}
+            psram_part=$(printf "%s" "$DEVICE_TYPE" | tail -c 2)
+            if [ "$psram_part" = "r2" ]; then export quad_psram=""; DEVICE_TYPE=$(printf "%s" "$DEVICE_TYPE" | cut -c1-$(expr $(printf "%s" "$DEVICE_TYPE" | wc -c) - 2)); fi
+            if [ "$psram_part" = "r8" ]; then export oct_psram=""; DEVICE_TYPE=$(printf "%s" "$DEVICE_TYPE" | cut -c1-$(expr $(printf "%s" "$DEVICE_TYPE" | wc -c) - 2)); fi
+            if [ ! -z "$prebuild" ] && [ -f "$prebuild" ]; then . "./$prebuild"; fi
+            idf.py set-target "$DEVICE_TYPE"
             idf.py build
 
       - name: Define artifact names
@@ -173,9 +263,12 @@ jobs:
         id: extract_signing_version
         if: ${{ inputs.keys != '[""]' }}
         run: |
-                if [ "${{ matrix.target }}" = "esp32" ]; then
+                DEVICE_TYPE=${{ matrix.target }}
+                psram_part=$(printf "%s" "$DEVICE_TYPE" | tail -c 2)
+                if [ "$psram_part" = "r2" ] || [ "$psram_part" = "r8" ]; then DEVICE_TYPE=$(printf "%s" "$DEVICE_TYPE" | cut -c1-$(expr $(printf "%s" "$DEVICE_TYPE" | wc -c) - 2)); fi
+                if [ "$DEVICE_TYPE" = "esp32" ]; then
                         echo "VERSION=1" >> $GITHUB_ENV
-                elif [ "${{ matrix.target }}" = "esp32s2" ] || [ "${{ matrix.target }}" = "esp32s3" ] || [ "${{ matrix.target }}" = "esp32c6" ]; then       
+                elif [ "$DEVICE_TYPE" = "esp32s2" ] || [ "$DEVICE_TYPE" = "esp32s3" ] || [ "$DEVICE_TYPE" = "esp32c6" ]; then
                         echo "VERSION=2" >> $GITHUB_ENV
                 else
                         echo "Error: Unsupported device type"
@@ -209,7 +302,7 @@ jobs:
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           local-path: artifacts
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}/${{ matrix.target }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{github.run_id}}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}/${{ matrix.target }}
           policy: 1
 
       - name: Set output
@@ -297,7 +390,7 @@ jobs:
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           local-path: /github/workspace/
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}/${{ matrix.target }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{github.run_id}}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}/${{ matrix.target }}
           policy: 1
 
       - name: Build and push ${{ matrix.app.type }}-${{ matrix.target }} (Firmware)
@@ -397,7 +490,7 @@ jobs:
           access-key: ${{ secrets.AWS_ACCESS_KEY }}
           secret-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           local-path: /github/workspace/${{ env.PROJECT_NAME }}
-          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}
+          remote-path: ${{ (inputs.upload-subpath != '' && inputs.upload-subpath) || env.DEFAULT_UPPATH }}/${{github.run_id}}/${{ env.PROJECT_NAME }}/${{ matrix.app.type }}-${{ matrix.app.version }}
           policy: 1
 
       - name: Build and push ${{ matrix.app.type }}-${{ matrix.arch }}

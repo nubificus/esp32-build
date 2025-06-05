@@ -6,6 +6,11 @@ ARG PROJDIR
 
 COPY ${PROJDIR} /firmware/
 
+COPY ./scripts/gen_esp32part.py /
+
+COPY ./scripts/ptmaker.sh /
+RUN chmod +x /ptmaker.sh
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libusb-1.0-0 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -18,7 +23,7 @@ RUN pip install --no-cache-dir esptool
 # Run example
 # docker run --rm -it --device=/dev/ttyUSB0 <TAG> --chip esp32s2 --port /dev/ttyUSB0 --flash_size 8MB
 
-COPY flash_entrypoint.sh /entrypoint.sh
+COPY ./scripts/flash_entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
