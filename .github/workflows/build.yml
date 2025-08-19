@@ -199,8 +199,8 @@ jobs:
             export FIRMWARE_VERSION=$version
             export APPLICATION_TYPE=$type
             export DEVICE_TYPE=${{ matrix.target }}
-            export WIFI_SSID=${{ secrets.NBFC_DEMO_IOT_WIFI_SSID }}
-            export WIFI_PASS=${{ secrets.NBFC_DEMO_IOT_WIFI_PASS }}
+            export WIFI_SSID=${{ secrets.NBFC_MOBILE_SSID }}
+            export WIFI_PASS=${{ secrets.NBFC_MOBILE_PASS }}
             export OTA_SECURE=1
             psram_part=$(printf "%s" "$DEVICE_TYPE" | tail -c 2)
             if [ "$psram_part" = "r2" ]; then export quad_psram=""; DEVICE_TYPE=$(printf "%s" "$DEVICE_TYPE" | cut -c1-$(expr $(printf "%s" "$DEVICE_TYPE" | wc -c) - 2)); fi
