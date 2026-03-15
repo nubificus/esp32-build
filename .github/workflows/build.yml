@@ -193,6 +193,7 @@ jobs:
           image: ${{ inputs.builder_image }}
           options: -v ${{ github.workspace }}/${{ env.PROJECT_NAME }}:/work
           run: |
+            . $IDF_PATH/export.sh
             cd /work
             apt update && apt install -y xxd
             . ./app_env_exports.sh
@@ -277,6 +278,7 @@ jobs:
           image: ${{ inputs.builder_image }}
           options: -v ${{ github.workspace }}:/work
           run: |
+            . $IDF_PATH/export.sh
             cd /work
             espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output /work/artifacts/${{ env.BINARY_NAME }} /work/artifacts/${{ env.BINARY_NAME }}-unsigned
             espsecure.py sign_data --version ${{ env.VERSION }} --keyfile key.pem --output /work/artifacts/${{ env.BOOTLOADER_BIN_NAME }} /work/artifacts/${{ env.BOOTLOADER_BIN_NAME }}-unsigned

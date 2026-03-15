@@ -42,7 +42,7 @@ jobs:
           APPS=$(jq -cr '.apps' <<< "$INPUT_JSON")
           TARGETS=$(jq -cr '.targets' <<< "$INPUT_JSON")
           KEYS=$(jq -cr '.keys' <<< "$INPUT_JSON")
-          BUILDER_IMAGE=$(jq -cr '.builder_image' <<< "$INPUT_JSON")
+          BUILDER_IMAGE=$(jq -cr '.builder_image // "harbor.nbfc.io/nubificus/esp-idf:x86_64-latest"' <<< "$INPUT_JSON")
 
           echo "Apps: ${APPS}"
           # Set outputs
