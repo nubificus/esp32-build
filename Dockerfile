@@ -1,6 +1,6 @@
 FROM harbor.nbfc.io/proxy_cache/library/ubuntu:24.04
 ARG IDF_CLONE_URL=https://github.com/espressif/esp-idf.git
-ARG IDF_CLONE_BRANCH_OR_TAG=master
+ARG IDF_CLONE_BRANCH_OR_TAG=release/v6.0
 ARG IDF_CHECKOUT_REF=
 ARG IDF_CLONE_SHALLOW=
 ARG IDF_CLONE_SHALLOW_DEPTH=1
@@ -10,7 +10,7 @@ ENV IDF_PATH=/opt/esp/idf
 ENV IDF_TOOLS_PATH=/opt/esp
 
 LABEL org.opencontainers.image.ref.name=ubuntu
-LABEL org.opencontainers.image.version=22.04
+LABEL org.opencontainers.image.version=24.04
 
 RUN apt update && apt install -y \
     bison \

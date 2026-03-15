@@ -255,7 +255,7 @@ jobs:
                 if [ "$psram_part" = "r2" ] || [ "$psram_part" = "r8" ]; then DEVICE_TYPE=$(printf "%s" "$DEVICE_TYPE" | cut -c1-$(expr $(printf "%s" "$DEVICE_TYPE" | wc -c) - 2)); fi
                 if [ "$DEVICE_TYPE" = "esp32" ]; then
                         echo "VERSION=1" >> $GITHUB_ENV
-                elif [ "$DEVICE_TYPE" = "esp32s2" ] || [ "$DEVICE_TYPE" = "esp32s3" ] || [ "$DEVICE_TYPE" = "esp32c6" ]; then
+                elif [ "$DEVICE_TYPE" = "esp32s2" ] || [ "$DEVICE_TYPE" = "esp32s3" ] || [ "$DEVICE_TYPE" = "esp32c6" ] || [ "$DEVICE_TYPE" = "esp32p4" ]; then
                         echo "VERSION=2" >> $GITHUB_ENV
                 else
                         echo "Error: Unsupported device type"
